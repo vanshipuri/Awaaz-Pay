@@ -1,0 +1,9 @@
+{
+  "name": "awaazpay-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AwaazPay voice-first payment companion demo for the Razorpay Hackathon 2026.",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
