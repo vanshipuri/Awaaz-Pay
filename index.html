@@ -128,7 +128,7 @@
             <span>Awaaz<span>Pay</span></span>
           </div>
           <div class="topbar-right">
-            <div class="connection-status"><span class="online-dot"></span><span>Connected</span><span class="topbar-divider"></span><span class="muted-status">Demo account</span></div>
+            <div class="connection-status"><span class="online-dot"></span><span id="connectionLabel">Connected</span><span class="topbar-divider"></span><span class="muted-status" id="modeLabel">Demo account</span></div>
             <button class="icon-button" id="helpButton" type="button" aria-label="How AwaazPay works"><svg><use href="#icon-help"></use></svg></button>
             <button class="audit-button" id="auditButton" type="button"><svg><use href="#icon-clock"></use></svg><span>Audit log</span></button>
           </div>
@@ -141,7 +141,7 @@
               <h1>Pay with your <em>voice.</em></h1>
               <p class="heading-copy">AwaazPay understands what you mean, checks what could go wrong, and asks before a rupee moves.</p>
             </div>
-            <div class="test-mode-pill"><span class="test-mode-dot"></span><span>Razorpay <strong>test mode</strong></span><svg><use href="#icon-lock"></use></svg></div>
+            <div class="test-mode-pill"><span class="test-mode-dot"></span><span>Stripe <strong>test mode</strong></span><svg><use href="#icon-lock"></use></svg></div>
           </section>
 
           <section class="dashboard-grid" aria-label="Voice payment workspace">
@@ -234,6 +234,14 @@
                 </div>
                 <div class="payees-foot"><span>3 trusted payees</span><span class="verified-label"><svg><use href="#icon-shield"></use></svg> verified</span></div>
               </section>
+
+              <section class="trust-card rail-card">
+                <div class="rail-card-heading"><span>TRUST CENTRE</span><button class="more-button" id="trustInfoButton" type="button" aria-label="Open trust centre"><svg><use href="#icon-shield"></use></svg></button></div>
+                <div class="trust-promise"><span class="trust-promise-icon"><svg><use href="#icon-lock"></use></svg></span><span><strong>No PINs or OTPs</strong><small>AwaazPay never asks you to speak secrets.</small></span></div>
+                <div class="trust-promise"><span class="trust-promise-icon"><svg><use href="#icon-check"></use></svg></span><span><strong>No silent payments</strong><small>A clear YES is required every time.</small></span></div>
+                <div class="caregiver-setting"><span><strong>Caregiver checks</strong><small>Required above ₹5,000</small></span><span class="setting-toggle" aria-label="Caregiver checks enabled"><span></span></span></div>
+                <button class="text-button" id="trustRulesButton" type="button">View all promises <svg><use href="#icon-arrow-up-right"></use></svg></button>
+              </section>
             </aside>
           </section>
 
@@ -253,10 +261,24 @@
                 <div class="agent-step" data-step="check"><span class="step-number">02</span><span class="step-copy"><strong>Resolve & check</strong><small>Payee history + risk signals</small></span><span class="step-state">waiting</span></div>
                 <div class="agent-step" data-step="confirm"><span class="step-number">03</span><span class="step-copy"><strong>Confirm aloud</strong><small>Amount + destination, every time</small></span><span class="step-state">waiting</span></div>
                 <div class="agent-step" data-step="guard"><span class="step-number">04</span><span class="step-copy"><strong>Guard</strong><small>Tripwires for pulls and lookalikes</small></span><span class="step-state">waiting</span></div>
-                <div class="agent-step" data-step="execute"><span class="step-number">05</span><span class="step-copy"><strong>Execute</strong><small>Razorpay test-mode route</small></span><span class="step-state">waiting</span></div>
+                <div class="agent-step" data-step="execute"><span class="step-number">05</span><span class="step-copy"><strong>Execute</strong><small>Stripe test-mode route</small></span><span class="step-state">waiting</span></div>
               </div>
               <div class="loop-footer"><span class="privacy-lock"><svg><use href="#icon-lock"></use></svg> Your voice transcript is private</span><button class="text-button" id="loopLearnButton" type="button">How it works <svg><use href="#icon-arrow-up-right"></use></svg></button></div>
             </section>
+          </section>
+
+          <section class="proof-grid" aria-label="Trust and demo proof points">
+            <article class="proof-card">
+              <div class="proof-card-heading"><span class="section-kicker">DEMO COVERAGE</span><span class="proof-live"><span></span> verified in flow</span></div>
+              <div class="proof-metrics"><div><strong>4</strong><span>safety scenarios</span></div><div><strong>0</strong><span>silent payments</span></div><div><strong>2</strong><span>voice language paths</span></div></div>
+              <p class="proof-note"><svg><use href="#icon-activity"></use></svg><span>Measured coverage for this self-contained prototype. Replace with recorded evaluation results before submission.</span></p>
+            </article>
+            <article class="proof-card consent-card">
+              <div class="proof-card-heading"><span class="section-kicker">CONSENT BY DESIGN</span><svg class="proof-shield"><use href="#icon-shield"></use></svg></div>
+              <h3>Clarity is a safety feature.</h3>
+              <p>No payment, caregiver share, or high-risk override happens without a deliberate user action.</p>
+              <button class="text-button" id="consentInfoButton" type="button">Read the promise <svg><use href="#icon-arrow-up-right"></use></svg></button>
+            </article>
           </section>
 
           <footer class="page-footer"><span><span class="footer-dot"></span> Nothing real moves · Synthetic demo account</span><span>Built for Razorpay Hackathon 2026 · Track 05 Open Track</span></footer>
@@ -288,5 +310,5 @@
     </div>
 
     <script src="app.js"></script>
-  </body>
+  <script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a34e90a76d8a48da',t:'MTc4ODM3MzYwNw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>

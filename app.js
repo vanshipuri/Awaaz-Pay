@@ -21,6 +21,8 @@
     commandInput: byId("commandInput"),
     closeTyping: byId("closeTyping"),
     languageSelect: byId("languageSelect"),
+    connectionLabel: byId("connectionLabel"),
+    modeLabel: byId("modeLabel"),
     reviewEmpty: byId("reviewEmpty"),
     reviewContent: byId("reviewContent"),
     stepList: byId("stepList"),
@@ -96,6 +98,13 @@
       stage: "Thinking",
       button: "Start speaking",
     },
+    clarify: {
+      label: "Need one more detail",
+      headline: "I do not want to guess.",
+      subline: "Tell me the missing amount or payee and I will check it again.",
+      stage: "Need detail",
+      button: "Start speaking",
+    },
     review: {
       label: "Your confirmation",
       headline: "Please check what I heard.",
@@ -113,7 +122,7 @@
     processing: {
       label: "Sending in test mode",
       headline: "One moment…",
-      subline: "Your confirmation was received. I am sending this through the Razorpay sandbox.",
+      subline: "Your confirmation was received. I am opening a secure Stripe test checkout.",
       stage: "Processing",
       button: "Please wait",
     },
@@ -143,6 +152,9 @@
     processingTimer: null,
     riskAcknowledged: false,
     collectAcknowledged: false,
+    caregiverStatus: "none",
+    caregiverTimer: null,
+    awaitingClarification: false,
     toastTimer: null,
     recognition: null,
     audit: [
@@ -205,7 +217,7 @@
     appState.status = nextStatus;
 
     dom.agentStatus.className = "agent-status";
-    if (["listening", "analyzing", "review", "guard", "processing", "success"].includes(nextStatus)) {
+    if (["listening", "analyzing", "clarify", "review", "guard", "processing", "success"].includes(nextStatus)) {
       dom.agentStatus.classList.add(nextStatus);
     }
     dom.statusText.textContent = copy.label;
@@ -228,6 +240,7 @@
       ready: { active: 0, done: -1 },
       listening: { active: 0, done: -1 },
       analyzing: { active: 1, done: 0 },
+      clarify: { active: 1, done: 0 },
       review: { active: 2, done: 1 },
       guard: { active: 3, done: 2 },
       processing: { active: 4, done: 3 },
@@ -276,16 +289,16 @@
       [/paanch\s*hazaar|panch\s*hazaar|five\s*thousand/, 5000],
     ];
     for (const [pattern, amount] of phraseAmounts) {
-      if (pattern.test(normalized)) return amount;
+      if (pattern.test(normalized)) return { amount, matched: true };
     }
 
     const compactMatch = normalized.match(/(?:rs\.?|inr|rupees?)?\s*(\d{2,7})(?:\s*(?:rupees?|rs\.?))?/i);
-    if (compactMatch) return Number(compactMatch[1]);
+    if (compactMatch) return { amount: Number(compactMatch[1]), matched: true };
 
     const shortK = normalized.match(/(\d+(?:\.\d+)?)\s*k\b/i);
-    if (shortK) return Math.round(Number(shortK[1]) * 1000);
+    if (shortK) return { amount: Math.round(Number(shortK[1]) * 1000), matched: true };
 
-    return 500;
+    return { amount: null, matched: false };
   };
 
   const resolvePayee = (text, demoType) => {
@@ -302,11 +315,13 @@
         avatar: "unknown",
         trusted: false,
         mismatch: true,
+        matched: true,
       };
     }
-    if (/rakesh|medical|दवा|dawai/.test(normalized)) return payeeProfiles.rakesh;
-    if (/mehta|utility|bijli|electricity/.test(normalized)) return payeeProfiles.mehta;
-    if (/unknown|new\s*(person|payee)|not\s*(saved|sure)/.test(normalized)) {
+    if (/sharma|kirana|grocery|दुकान|dukaan/.test(normalized)) return { ...payeeProfiles.sharma, matched: true };
+    if (/rakesh|medical|दवा|dawai/.test(normalized)) return { ...payeeProfiles.rakesh, matched: true };
+    if (/mehta|utility|bijli|electricity/.test(normalized)) return { ...payeeProfiles.mehta, matched: true };
+    if (/unknown|new\s*(person|payee)|not\s*(saved|sure)|aman\s*trader/.test(normalized)) {
       return {
         name: "Aman Traders",
         requestedName: "Aman Traders",
@@ -318,9 +333,22 @@
         avatar: "unknown",
         trusted: false,
         mismatch: false,
+        matched: true,
       };
     }
-    return payeeProfiles.sharma;
+    return {
+      name: "Unknown payee",
+      requestedName: "Unknown payee",
+      short: "?",
+      vpa: "Not resolved",
+      usual: 0,
+      payments: 0,
+      lastPaid: "never",
+      avatar: "unknown",
+      trusted: false,
+      mismatch: false,
+      matched: false,
+    };
   };
 
   const parseCommand = (rawText, demoType = "") => {
@@ -328,29 +356,40 @@
     const normalized = raw.toLowerCase();
     const isCollect = demoType === "collect" || /collect\s*request|request\s*(for|to)|pull\s*request|paise\s*(maang|mang)|take\s*money/.test(normalized);
     const payee = resolvePayee(raw, demoType);
-    const amount = parseAmount(raw);
+    const amountInfo = parseAmount(raw);
+    const amount = amountInfo.amount;
+    const missingFields = [];
+    if (!payee.matched) missingFields.push("payee");
+    if (!amountInfo.matched) missingFields.push("amount");
+    const needsClarification = missingFields.length > 0;
     const flags = [];
 
     if (isCollect) flags.push("collect");
-    if (payee.mismatch || !payee.trusted) flags.push("payee");
-    if (payee.usual && amount >= Math.max(5000, payee.usual * 10)) flags.push("amount");
-    else if (payee.usual && amount >= payee.usual * 3) flags.push("amount-elevated");
+    if (!payee.trusted && payee.matched) flags.push("payee");
+    if (!needsClarification && payee.usual && amount >= Math.max(5000, payee.usual * 10)) flags.push("amount");
+    else if (!needsClarification && payee.usual && amount >= payee.usual * 3) flags.push("amount-elevated");
 
-    const amountMultiplier = payee.usual ? Math.round(amount / payee.usual) : null;
-    const riskLevel = isCollect ? "critical" : flags.length ? "high" : "low";
-    const riskAcknowledgement = flags.includes("amount") || flags.includes("amount-elevated") || flags.includes("payee") || !payee.trusted;
+    const amountMultiplier = payee.usual && amount ? Math.round(amount / payee.usual) : null;
+    const riskLevel = needsClarification ? "clarify" : isCollect ? "critical" : flags.length ? "high" : "low";
+    const riskAcknowledgement = !needsClarification && (flags.includes("amount") || flags.includes("amount-elevated") || flags.includes("payee") || !payee.trusted);
+    const requiresCaregiver = !needsClarification && !isCollect && (flags.includes("amount") || flags.includes("payee") || !payee.trusted);
     const intentId = `INT-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 
     return {
       raw,
       amount,
-      amountWords: amountInWords(amount),
+      amountMatched: amountInfo.matched,
+      amountWords: amount ? amountInWords(amount) : "the amount",
       payee,
+      payeeMatched: payee.matched,
       isCollect,
       flags,
+      missingFields,
+      needsClarification,
       amountMultiplier,
       riskLevel,
       riskAcknowledgement,
+      requiresCaregiver,
       intentId,
       direction: isCollect ? "Money out · collect request" : "Payment out · user started",
     };
@@ -399,7 +438,56 @@
       <span><strong>${escapeHTML(label)}</strong><small>${escapeHTML(value)}</small></span>
     </div>`;
 
+  const renderClarification = (payment) => {
+    const missing = payment.missingFields || [];
+    const missingAmount = missing.includes("amount");
+    const missingPayee = missing.includes("payee");
+    let question = "Please tell me the payee and the amount.";
+    if (missingAmount && !missingPayee) question = `How much should I send to ${payment.payee.name}?`;
+    if (missingPayee && !missingAmount) question = payment.amount ? `Who should I send ${formatCurrency(payment.amount)} to?` : "Who should I send the payment to?";
+
+    dom.reviewEmpty.classList.add("hidden");
+    dom.reviewContent.classList.remove("hidden");
+    dom.reviewContent.innerHTML = `
+      <div class="review-head"><span class="section-kicker">CLARIFICATION NEEDED</span><span class="review-ref">No payment intent created</span></div>
+      <div class="clarify-panel"><div class="clarify-icon"><svg><use href="#icon-help"></use></svg></div><div><h2>${escapeHTML(question)}</h2><p>I will not guess a missing amount or destination. Add the detail and I will run the safety check again.</p></div></div>
+      <div class="missing-fields">${missing.map((field) => `<span><svg><use href="#icon-alert"></use></svg> missing ${escapeHTML(field)}</span>`).join("")}</div>
+      <div class="review-actions"><button class="primary-button" id="clarifyInput" type="button"><svg><use href="#icon-mic"></use></svg>Tell me the missing detail</button><button class="cancel-action" id="cancelReview" type="button">Cancel</button></div>
+      <div class="reasoning-line"><svg><use href="#icon-lock"></use></svg><span>Nothing can be executed until both amount and payee are explicit.</span></div>`;
+
+    byId("clarifyInput")?.addEventListener("click", () => {
+      showTyping();
+      dom.commandInput.placeholder = missingAmount && !missingPayee ? "e.g. 500 rupees" : missingPayee && !missingAmount ? "e.g. Sharma Kirana" : "e.g. Sharma Kirana ko 500 rupaye bhejo";
+      dom.commandInput.focus();
+      speak(question);
+    });
+    byId("cancelReview")?.addEventListener("click", () => {
+      addAudit("Clarification cancelled", "User chose not to provide the missing payment details.", "safe", "check");
+      resetPaymentFlow();
+      speak("Cancelled. Nothing moved.");
+    });
+  };
+
+  const caregiverApprovalHTML = (payment) => {
+    if (!payment.requiresCaregiver) return "";
+    const status = appState.caregiverStatus;
+    if (!appState.riskAcknowledged) {
+      return `<div class="caregiver-approval"><span class="caregiver-approval-icon"><svg><use href="#icon-users"></use></svg></span><span class="caregiver-approval-copy"><strong>Caregiver approval required</strong><small>A trusted caregiver check is required above ₹5,000 or for a new payee.</small></span><button class="caregiver-action" type="button" disabled>After warning</button></div>`;
+    }
+    if (status === "pending") {
+      return `<div class="caregiver-approval pending"><span class="caregiver-approval-icon"><svg><use href="#icon-clock"></use></svg></span><span class="caregiver-approval-copy"><strong>Waiting for Meera Sharma</strong><small>Approval request sent. The demo will simulate her response.</small></span><button class="caregiver-action" type="button" disabled>Waiting…</button></div>`;
+    }
+    if (status === "approved") {
+      return `<div class="caregiver-approval approved"><span class="caregiver-approval-icon"><svg><use href="#icon-check"></use></svg></span><span class="caregiver-approval-copy"><strong>Approved by Meera Sharma</strong><small>Approval recorded in the caregiver audit log.</small></span><span class="verified-label">approved</span></div>`;
+    }
+    return `<div class="caregiver-approval"><span class="caregiver-approval-icon"><svg><use href="#icon-users"></use></svg></span><span class="caregiver-approval-copy"><strong>Caregiver approval required</strong><small>Ask Meera Sharma to approve this high-risk payment before continuing.</small></span><button class="caregiver-action" id="requestCaregiver" type="button">Ask caregiver</button></div>`;
+  };
+
   const renderReview = (payment) => {
+    if (payment.needsClarification) {
+      renderClarification(payment);
+      return;
+    }
     const p = payment;
     const isCritical = p.isCollect;
     const isHigh = !isCritical && p.riskLevel === "high";
@@ -446,10 +534,19 @@
           <button class="cancel-action" id="cancelReview" type="button">Cancel</button>
         </div>`;
     } else if (p.riskAcknowledgement) {
+      const caregiverBlock = caregiverApprovalHTML(p);
+      const caregiverApproved = !p.requiresCaregiver || appState.caregiverStatus === "approved";
+      const canConfirm = appState.riskAcknowledged && caregiverApproved;
+      const actionLabel = !appState.riskAcknowledged
+        ? "Acknowledge warning first"
+        : p.requiresCaregiver && !caregiverApproved
+          ? "Waiting for caregiver approval"
+          : "Pay anyway · test mode";
       extraAction = `
         <div class="ack-row"><button id="ackRisk" type="button" aria-label="Acknowledge safety warning" class="${appState.riskAcknowledged ? "checked" : ""}"><svg><use href="#icon-check"></use></svg></button><span>I heard this warning and have independently verified the amount and account name.</span></div>
+        ${caregiverBlock}
         <div class="review-actions">
-          <button class="primary-button warning" id="confirmPayment" type="button" ${appState.riskAcknowledged ? "" : "disabled"}>${appState.riskAcknowledged ? "Pay anyway · test mode" : "Acknowledge warning first"}</button>
+          <button class="primary-button warning" id="confirmPayment" type="button" ${canConfirm ? "" : "disabled"}>${actionLabel}</button>
           <button class="cancel-action" id="cancelReview" type="button">Cancel</button>
         </div>`;
     } else {
@@ -486,6 +583,7 @@
     const declineButton = byId("declineButton");
     const expectButton = byId("expectButton");
     const ackButton = byId("ackRisk");
+    const requestCaregiverButton = byId("requestCaregiver");
     const cancelButton = byId("cancelReview");
     const editButton = byId("editReview");
 
@@ -506,6 +604,25 @@
       renderReview(payment);
       setState("guard");
       speak("You marked this request as expected. It would still take money from you. Continue only if you recognize the sender.");
+    });
+
+    requestCaregiverButton?.addEventListener("click", () => {
+      if (!payment.requiresCaregiver || !appState.riskAcknowledged) return;
+      appState.caregiverStatus = "pending";
+      addAudit("Caregiver approval requested", `Asked Meera Sharma to approve ${formatCurrency(payment.amount)} for ${payment.payee.name}.`, "warning", "users");
+      renderReview(payment);
+      setState("guard");
+      speak("Approval request sent to Meera Sharma. I will wait before allowing this high-risk payment.");
+      window.clearTimeout(appState.caregiverTimer);
+      appState.caregiverTimer = window.setTimeout(() => {
+        if (appState.pending?.intentId !== payment.intentId || appState.caregiverStatus !== "pending") return;
+        appState.caregiverStatus = "approved";
+        addAudit("Caregiver approved", "Meera Sharma approved the high-risk payment after reviewing the request.", "safe", "users");
+        renderReview(payment);
+        setState("guard");
+        speak("Meera Sharma approved this request. You still need to say yes before the test payment can be sent.");
+        showToast("Caregiver approval received");
+      }, 1400);
     });
 
     ackButton?.addEventListener("click", () => {
@@ -551,9 +668,9 @@
       </div>`;
   };
 
-  const renderSuccess = (payment) => {
-    const reference = `pay_test_${Math.random().toString(36).slice(2, 10)}`;
-    appState.lastPayment = { ...payment, reference };
+  const renderSuccess = (payment, reference = "") => {
+    const resolvedReference = reference || `pay_test_${Math.random().toString(36).slice(2, 10)}`;
+    appState.lastPayment = { ...payment, reference: resolvedReference };
     dom.reviewEmpty.classList.add("hidden");
     dom.reviewContent.classList.remove("hidden");
     dom.reviewContent.innerHTML = `
@@ -562,7 +679,7 @@
           <div class="result-icon"><svg><use href="#icon-check"></use></svg></div>
           <h2>Test payment complete</h2>
           <p>${formatCurrency(payment.amount)} paid to ${escapeHTML(payment.payee.name)}.</p>
-          <div class="result-reference">${escapeHTML(reference)} · Razorpay sandbox · ${escapeHTML(timeNow())}</div>
+          <div class="result-reference">${escapeHTML(resolvedReference)} · Stripe test mode · ${escapeHTML(timeNow())}</div>
           <div class="result-actions"><button class="primary-button" id="startAnother" type="button">Start another payment</button><button class="secondary-button" id="viewAuditFromResult" type="button">View audit log</button></div>
         </div>
       </div>`;
@@ -587,20 +704,106 @@
     byId("viewAuditFromResult")?.addEventListener("click", openAudit);
   };
 
-  const executePayment = (payment) => {
+  const createStripeCheckoutSession = async (payment) => {
+    const response = await fetch("/api/payment/create-intent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        amountPaise: Math.round(payment.amount * 100),
+        payee: payment.payee.name,
+        receipt: payment.intentId,
+        origin: window.location.origin,
+      }),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || "Could not create the Stripe test payment");
+    return body;
+  };
+
+  const completePayment = (payment, reference, provider = "simulated") => {
+    const isRealTestMode = provider === "stripe";
+    addAudit("Payment complete", `${formatCurrency(payment.amount)} ${isRealTestMode ? "Stripe test" : "simulated test"} payment sent to ${payment.payee.name}.`, "safe", "check");
+    setState("success");
+    renderSuccess(payment, reference);
+    speak(`Done. ${amountInWords(payment.amount)} paid to ${payment.payee.name}. ${isRealTestMode ? "Stripe test payment completed." : "This was a test payment; no real money moved."}`);
+    showToast(isRealTestMode ? "Stripe test payment complete" : "Test payment complete · nothing real moved");
+  };
+
+  const restorePaymentReview = (payment, message = "Checkout cancelled. Nothing moved.") => {
+    addAudit("Payment cancelled", message, "safe", "check");
+    setState(payment.riskLevel === "low" ? "review" : "guard");
+    renderReview(payment);
+    speak(message);
+  };
+
+  const executePayment = async (payment) => {
     if (appState.status === "processing") return;
     addAudit("Confirmation received", `User said yes to ${formatCurrency(payment.amount)} for ${payment.payee.name}.`, "safe", "check");
     setState("processing");
     renderProcessing(payment);
-    speak(`Confirmed. Sending ${amountInWords(payment.amount)} to ${payment.payee.name} through Razorpay test mode.`);
-    window.clearTimeout(appState.processingTimer);
-    appState.processingTimer = window.setTimeout(() => {
-      addAudit("Payment complete", `${formatCurrency(payment.amount)} test payment sent to ${payment.payee.name}. No real money moved.`, "safe", "check");
-      setState("success");
-      renderSuccess(payment);
-      speak(`Done. ${amountInWords(payment.amount)} paid to ${payment.payee.name}. This was a test payment; no real money moved.`);
-      showToast("Test payment complete · nothing real moved");
-    }, 1700);
+    speak(`Confirmed. Preparing a Stripe test checkout for ${amountInWords(payment.amount)} to ${payment.payee.name}.`);
+
+    try {
+      const sessionResult = await createStripeCheckoutSession(payment);
+      if (sessionResult.mode === "stripe" && sessionResult.url && sessionResult.sessionId) {
+        sessionStorage.setItem("awaazpay_pending_payment", JSON.stringify(payment));
+        sessionStorage.setItem("awaazpay_checkout_session", sessionResult.sessionId);
+        addAudit("Stripe Checkout opened", `Secure Stripe test checkout opened for ${formatCurrency(payment.amount)}.`, "safe", "lock");
+        window.location.href = sessionResult.url;
+        return;
+      }
+
+      // No credentials are needed for the judge demo. The server returns a simulated Stripe session.
+      window.clearTimeout(appState.processingTimer);
+      appState.processingTimer = window.setTimeout(() => {
+        completePayment(payment, sessionResult.order?.id || "stripe_test_demo", "simulated");
+      }, 1700);
+    } catch (error) {
+      restorePaymentReview(payment, "The Stripe payment route is unavailable. Nothing moved.");
+      showToast("Stripe route unavailable · nothing moved", "danger");
+    }
+  };
+
+  const handleStripeReturn = async () => {
+    const params = new URLSearchParams(window.location.search);
+    const isSuccess = params.get("stripe_success") === "1";
+    const isCancelled = params.get("stripe_cancelled") === "1";
+    if (!isSuccess && !isCancelled) return;
+
+    const serialized = sessionStorage.getItem("awaazpay_pending_payment");
+    const payment = serialized ? JSON.parse(serialized) : null;
+    const sessionId = params.get("session_id") || sessionStorage.getItem("awaazpay_checkout_session") || "";
+    sessionStorage.removeItem("awaazpay_pending_payment");
+    sessionStorage.removeItem("awaazpay_checkout_session");
+    window.history.replaceState({}, document.title, window.location.pathname);
+
+    if (!payment) {
+      showToast("Stripe returned, but the local payment context was unavailable.", "danger");
+      return;
+    }
+    appState.pending = payment;
+
+    if (isCancelled) {
+      restorePaymentReview(payment, "Stripe Checkout was cancelled. Nothing moved.");
+      showToast("Checkout cancelled · nothing moved");
+      return;
+    }
+
+    setState("processing");
+    renderProcessing(payment);
+    try {
+      const response = await fetch("/api/payment/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+      const verification = await response.json();
+      if (!response.ok || !verification.verified) throw new Error("Stripe session is not paid");
+      completePayment(payment, sessionId || "stripe_test_session", "stripe");
+    } catch (error) {
+      restorePaymentReview(payment, "Stripe returned, but the payment could not be verified. Nothing was marked complete.");
+      showToast("Stripe verification failed", "danger");
+    }
   };
 
   const declineCollect = (payment) => {
@@ -611,6 +814,62 @@
     showToast("Request declined safely · no money moved");
   };
 
+  const requestGroqIntent = async (transcript) => {
+    try {
+      const response = await fetch("/api/intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transcript,
+          language: dom.languageSelect?.value || "en-IN",
+          knownPayees: Object.values(payeeProfiles).map((payee) => ({ name: payee.name, vpa: payee.vpa, usualAmountRupees: payee.usual })),
+        }),
+      });
+      if (!response.ok) return null;
+      const agent = await response.json();
+      return agent.mode === "groq" ? agent : null;
+    } catch (error) {
+      return null;
+    }
+  };
+
+  const mergeAgentIntent = (agent, local, demoType = "") => {
+    const agentMissing = Array.isArray(agent.missingFields) ? agent.missingFields.filter((field) => ["amount", "payee"].includes(field)) : [];
+    const missingFields = [...new Set([...(local.missingFields || []), ...agentMissing])];
+    const agentAmount = Number(agent.amountPaise);
+    const amount = Number.isInteger(agentAmount) && agentAmount > 0 ? agentAmount / 100 : local.amount;
+    const payee = agent.payeeQuery ? resolvePayee(String(agent.payeeQuery), demoType) : local.payee;
+    const isCollect = local.isCollect || agent.direction === "pull" || agent.intent === "collect";
+    const flags = [...(local.flags || [])];
+    for (const signal of Array.isArray(agent.riskSignals) ? agent.riskSignals : []) {
+      const normalized = String(signal).toLowerCase();
+      if (/collect|pull/.test(normalized) && !flags.includes("collect")) flags.push("collect");
+      if (/amount|unusual|large|velocity/.test(normalized) && !flags.includes("amount")) flags.push("amount");
+      if (/payee|lookalike|mismatch|unknown|new/.test(normalized) && !flags.includes("payee")) flags.push("payee");
+    }
+    if (isCollect && !flags.includes("collect")) flags.push("collect");
+    const needsClarification = missingFields.length > 0 || !payee.matched || !amount;
+    const amountMultiplier = payee.usual && amount ? Math.round(amount / payee.usual) : null;
+    const riskLevel = needsClarification ? "clarify" : isCollect ? "critical" : flags.length ? "high" : "low";
+    const riskAcknowledgement = !needsClarification && (flags.includes("amount") || flags.includes("amount-elevated") || flags.includes("payee") || !payee.trusted);
+    return {
+      ...local,
+      amount,
+      amountMatched: Boolean(amount),
+      amountWords: amount ? amountInWords(amount) : "the amount",
+      payee,
+      payeeMatched: payee.matched,
+      isCollect,
+      flags,
+      missingFields,
+      needsClarification,
+      amountMultiplier,
+      riskLevel,
+      riskAcknowledgement,
+      requiresCaregiver: !needsClarification && !isCollect && (flags.includes("amount") || flags.includes("payee") || !payee.trusted),
+    };
+  };
+
   const handleCommand = (rawText, source = "voice", demoType = "") => {
     const raw = String(rawText || "").trim();
     if (!raw) return;
@@ -618,6 +877,8 @@
       showToast("I am still finishing the current step.");
       return;
     }
+    const clarificationBase = appState.awaitingClarification && appState.pending?.needsClarification ? appState.pending.raw : "";
+    const effectiveRaw = clarificationBase ? `${clarificationBase} ${raw}` : raw;
     if (appState.listening && appState.recognition) {
       try { appState.recognition.stop(); } catch (error) { /* no-op */ }
       appState.listening = false;
@@ -626,19 +887,34 @@
     appState.pending = null;
     appState.riskAcknowledged = false;
     appState.collectAcknowledged = false;
+    appState.caregiverStatus = "none";
+    appState.awaitingClarification = false;
     appState.analysisToken += 1;
     const token = appState.analysisToken;
     window.clearTimeout(appState.analysisTimer);
+    window.clearTimeout(appState.caregiverTimer);
     setTranscript(raw);
     setState("analyzing");
     showReviewLoading();
     addAudit(source === "demo" ? "Demo request" : "You said", raw, "safe", "mic");
     speak("I heard that. I am checking the amount, payee, and payment direction now.");
 
-    appState.analysisTimer = window.setTimeout(() => {
+    appState.analysisTimer = window.setTimeout(async () => {
       if (token !== appState.analysisToken) return;
-      const parsed = parseCommand(raw, demoType);
+      const localParsed = parseCommand(effectiveRaw, demoType);
+      const groqIntent = demoType ? null : await requestGroqIntent(effectiveRaw);
+      if (token !== appState.analysisToken) return;
+      const parsed = groqIntent ? mergeAgentIntent(groqIntent, localParsed, demoType) : localParsed;
       appState.pending = parsed;
+      if (parsed.needsClarification) {
+        appState.awaitingClarification = true;
+        const missingLabel = parsed.missingFields.join(" and ");
+        addAudit("Clarification needed", `The agent asked for the missing ${missingLabel} instead of guessing.`, "warning", "help");
+        renderClarification(parsed);
+        setState("clarify");
+        speak(buildClarificationPrompt(parsed));
+        return;
+      }
       const riskDetail = parsed.isCollect
         ? `Collect request detected for ${formatCurrency(parsed.amount)}; it would pull money from the user.`
         : parsed.payee.mismatch || !parsed.payee.trusted
@@ -653,29 +929,40 @@
     }, 780);
   };
 
+  const buildClarificationPrompt = (payment) => {
+    const missing = payment.missingFields || [];
+    if (missing.includes("amount") && missing.includes("payee")) return "I need two details before I can prepare a payment. Who should I pay, and how much?";
+    if (missing.includes("amount")) return `How much should I send to ${payment.payee.name}? I will not guess the amount.`;
+    return `Who should I send ${formatCurrency(payment.amount)} to? I will not guess the destination.`;
+  };
+
   const buildSpokenSummary = (payment) => {
     if (payment.isCollect) {
-      return `Stop. This is a collect request for ${payment.amountWords} rupees. It would take money from you, not pay the shop. Say no if you did not expect it.`;
+      return `Stop. This is a collect request for ${formatCurrency(payment.amount)}, ${payment.amountWords} rupees, from ${payment.payee.name}. It would take money from you, not pay the shop. Say no if you did not expect it.`;
     }
     if (payment.payee.mismatch || !payment.payee.trusted) {
-      return `Pause. You asked for ${payment.payee.requestedName || payment.payee.name}, but I found an account named ${payment.payee.name}. This may be the wrong payee. Please verify before continuing.`;
+      return `Pause. You asked for ${payment.payee.requestedName || payment.payee.name}, but I found an account named ${payment.payee.name} at ${payment.payee.vpa}. This may be the wrong payee. Please verify before continuing.`;
     }
-    if (payment.flags.includes("amount")) {
-      return `You are about to pay ${payment.amountWords} rupees to ${payment.payee.name}. That is ${payment.amountMultiplier} times your usual amount for this payee. Please verify it before continuing.`;
+    if (payment.flags.includes("amount") || payment.flags.includes("amount-elevated")) {
+      return `Pause. You are about to pay ${formatCurrency(payment.amount)}, ${payment.amountWords} rupees, to ${payment.payee.name} at ${payment.payee.vpa}. That is ${payment.amountMultiplier} times your usual amount for this payee. Say yes only after you verify it.`;
     }
-    return `You are about to pay ${payment.amountWords} rupees to ${payment.payee.name}, your regular grocery shop. Say yes to confirm.`;
+    return `You are about to pay ${formatCurrency(payment.amount)}, ${payment.amountWords} rupees, to ${payment.payee.name} at ${payment.payee.vpa}. This is a payment you started. Say yes to confirm or no to cancel.`;
   };
 
   const resetPaymentFlow = () => {
     window.clearTimeout(appState.analysisTimer);
     window.clearTimeout(appState.processingTimer);
+    window.clearTimeout(appState.caregiverTimer);
     appState.analysisToken += 1;
     appState.pending = null;
     appState.lastPayment = null;
     appState.riskAcknowledged = false;
     appState.collectAcknowledged = false;
+    appState.caregiverStatus = "none";
+    appState.awaitingClarification = false;
     setState("ready");
     setTranscript('Sharma kirana ko paanch sau rupaye bhejo');
+    dom.commandInput.placeholder = "e.g. Sharma kirana ko 500 rupaye bhejo";
     dom.reviewContent.classList.add("hidden");
     dom.reviewContent.innerHTML = "";
     dom.reviewEmpty.classList.remove("hidden");
@@ -779,6 +1066,11 @@
         title: "Three rules protect every payment",
         body: `<p>These guardrails are deliberately simple so the person making the payment, and the caregiver reviewing it later, can understand what happened.</p><div class="info-points"><div><span>01</span><strong>Always repeat the truth</strong><small>The amount and destination are spoken back before a confirmation can be accepted.</small></div><div><span>02</span><strong>Pause on unusual signals</strong><small>A large amount, a new payee, or a name mismatch needs an extra acknowledgement.</small></div><div><span>03</span><strong>Explain pulls clearly</strong><small>A collect request is described as money leaving your account, never as a normal payment.</small></div></div>`,
       },
+      trust: {
+        kicker: "TRUST CENTRE",
+        title: "Promises that stay visible",
+        body: `<p>AwaazPay is designed for the moments when a person cannot comfortably inspect a screen. Trust is not a hidden setting; it is part of every decision.</p><div class="info-points"><div><span>01</span><strong>No PINs or OTPs</strong><small>Authentication stays inside the bank or Stripe-approved secure surface.</small></div><div><span>02</span><strong>No silent payments</strong><small>The agent can prepare a payment, but only the user can confirm it.</small></div><div><span>03</span><strong>Caregiver by consent</strong><small>High-risk requests can wait for a trusted caregiver without exposing secrets.</small></div></div>`,
+      },
       settings: {
         kicker: "PREFERENCES",
         title: "Voice that works for you",
@@ -862,6 +1154,9 @@
   byId("helpButton")?.addEventListener("click", () => openInfo("how"));
   byId("safetyInfoButton")?.addEventListener("click", () => openInfo("safety"));
   byId("openSafety")?.addEventListener("click", () => openInfo("safety"));
+  byId("trustInfoButton")?.addEventListener("click", () => openInfo("trust"));
+  byId("trustRulesButton")?.addEventListener("click", () => openInfo("trust"));
+  byId("consentInfoButton")?.addEventListener("click", () => openInfo("trust"));
   byId("loopLearnButton")?.addEventListener("click", () => openInfo("how"));
   byId("closeInfo")?.addEventListener("click", closeInfo);
   byId("closeInfoBottom")?.addEventListener("click", closeInfo);
@@ -885,7 +1180,25 @@
     }
   });
 
+  const loadServerHealth = async () => {
+    try {
+      const response = await fetch("/api/health", { cache: "no-store" });
+      if (!response.ok) return;
+      const health = await response.json();
+      dom.connectionLabel.textContent = "Backend ready";
+      const modes = [];
+      if (health.groqConfigured) modes.push("Groq");
+      if (health.stripeConfigured) modes.push("Stripe test");
+      dom.modeLabel.textContent = modes.length ? modes.join(" · ") : "Local fallback · demo";
+    } catch (error) {
+      dom.connectionLabel.textContent = "Local only";
+      dom.modeLabel.textContent = "Demo fallback";
+    }
+  };
+
   setupRecognition();
   renderAudit();
   setState("ready");
+  loadServerHealth();
+  handleStripeReturn();
 })();
