@@ -81,6 +81,18 @@
       <symbol id="icon-eye-off" viewBox="0 0 24 24">
         <path d="M3.5 3.5 20.5 20.5M10.6 10.6a2 2 0 0 0 2.8 2.8M9.5 5.4A10.3 10.3 0 0 1 12 5c5.1 0 8.5 5 8.5 7s-1.2 3-3.2 4.6M6.7 7.1C4.6 8.4 3.5 10.8 3.5 12c0 2 3.4 7 8.5 7 1 0 2-.2 2.8-.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
       </symbol>
+      <symbol id="icon-wallet" viewBox="0 0 24 24">
+        <path d="M3.5 7.8A2.3 2.3 0 0 1 5.8 5.5h11.4a2 2 0 0 1 2 2v1.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+        <rect x="3.5" y="7.8" width="17" height="11" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.8" />
+        <path d="M20.5 11.6h-3.9a1.9 1.9 0 0 0 0 3.8h3.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="icon-fingerprint" viewBox="0 0 24 24">
+        <path d="M5 11a7 7 0 0 1 14 0M7.6 11.4a4.4 4.4 0 0 1 8.8 0c0 2.6-.4 5-1.2 7M12 11.6v3.9M9.9 19.4c.6-1.6.9-3.4.9-5.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+      </symbol>
+      <symbol id="icon-key" viewBox="0 0 24 24">
+        <circle cx="8" cy="12" r="3.6" fill="none" stroke="currentColor" stroke-width="1.8" />
+        <path d="M11.6 12H20m-2.6 0v2.6M15 12v2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+      </symbol>
     </svg>
 
     <div class="app-shell">
@@ -130,7 +142,7 @@
           <div class="topbar-right">
             <div class="connection-status"><span class="online-dot"></span><span id="connectionLabel">Connected</span><span class="topbar-divider"></span><span class="muted-status" id="modeLabel">Demo account</span></div>
             <button class="icon-button" id="helpButton" type="button" aria-label="How AwaazPay works"><svg><use href="#icon-help"></use></svg></button>
-            <button class="audit-button" id="auditButton" type="button"><svg><use href="#icon-clock"></use></svg><span>Audit log</span></button>
+            <button class="audit-button" id="auditButton" type="button"><svg><use href="#icon-clock"></use></svg><span>Caregiver log</span></button>
           </div>
         </header>
 
@@ -139,9 +151,9 @@
             <div>
               <div class="eyebrow">PERSONAL PAYMENT COMPANION <span class="beta-badge light">BETA DEMO</span></div>
               <h1>Pay with your <em>voice.</em></h1>
-              <p class="heading-copy">AwaazPay understands what you mean, checks what could go wrong, and asks before a rupee moves.</p>
+              <p class="heading-copy">AwaazPay understands what you mean, checks what could go wrong, asks before a rupee moves, and authorizes it with a spoken Voice PIN instead of a PIN pad.</p>
             </div>
-            <div class="test-mode-pill"><span class="test-mode-dot"></span><span>Stripe <strong>test mode</strong></span><svg><use href="#icon-lock"></use></svg></div>
+            <div class="test-mode-pill"><span class="test-mode-dot"></span><span><span id="providerLabel">Razorpay mandate ·</span> <strong id="providerMode">Smart Demo Mode</strong></span><svg><use href="#icon-lock"></use></svg></div>
           </section>
 
           <section class="dashboard-grid" aria-label="Voice payment workspace">
@@ -158,6 +170,10 @@
                 <div class="orb-halo halo-one"></div>
                 <div class="orb-halo halo-two"></div>
                 <div class="orb-halo halo-three"></div>
+                <div class="pin-badge hidden" id="pinBadge" role="status" aria-live="assertive">
+                  <span class="pin-badge-shield" aria-hidden="true">🛡️</span>
+                  <span id="pinBadgeText">WAITING FOR VOICE PIN</span>
+                </div>
                 <button class="mic-button" id="micButton" type="button" aria-label="Start speaking">
                   <span class="mic-button-glow"></span>
                   <svg><use href="#icon-mic"></use></svg>
@@ -192,10 +208,11 @@
               <div class="quick-demos">
                 <div class="quick-demos-heading"><span>TRY A DEMO</span><span class="quick-demos-hint">No real money moves</span></div>
                 <div class="demo-grid">
-                  <button class="demo-chip safe" type="button" data-demo="safe"><span class="demo-chip-icon"><svg><use href="#icon-check"></use></svg></span><span><strong>Safe payment</strong><small>₹500 · regular payee</small></span><svg class="chip-arrow"><use href="#icon-arrow-up-right"></use></svg></button>
+                  <button class="demo-chip safe" type="button" data-demo="safe"><span class="demo-chip-icon"><svg><use href="#icon-check"></use></svg></span><span><strong>Safe payment</strong><small>₹500 · inside mandate</small></span><svg class="chip-arrow"><use href="#icon-arrow-up-right"></use></svg></button>
                   <button class="demo-chip danger" type="button" data-demo="inflated"><span class="demo-chip-icon"><svg><use href="#icon-alert"></use></svg></span><span><strong>Inflated amount</strong><small>₹50,000 · 100× usual</small></span><svg class="chip-arrow"><use href="#icon-arrow-up-right"></use></svg></button>
-                  <button class="demo-chip danger" type="button" data-demo="collect"><span class="demo-chip-icon"><svg><use href="#icon-arrow-up-right"></use></svg></span><span><strong>Collect request</strong><small>₹50,000 · money out</small></span><svg class="chip-arrow"><use href="#icon-arrow-up-right"></use></svg></button>
+                  <button class="demo-chip danger" type="button" data-demo="collect"><span class="demo-chip-icon"><svg><use href="#icon-arrow-up-right"></use></svg></span><span><strong>Collect request</strong><small>₹50,000 · pull scam</small></span><svg class="chip-arrow"><use href="#icon-arrow-up-right"></use></svg></button>
                   <button class="demo-chip warning" type="button" data-demo="mismatch"><span class="demo-chip-icon"><svg><use href="#icon-eye-off"></use></svg></span><span><strong>Lookalike payee</strong><small>Name does not match</small></span><svg class="chip-arrow"><use href="#icon-arrow-up-right"></use></svg></button>
+                  <button class="demo-chip warning wide" type="button" data-demo="mandate"><span class="demo-chip-icon"><svg><use href="#icon-lock"></use></svg></span><span><strong>Above mandate limit</strong><small>₹6,000 · over the ₹5,000 hands-free cap → caregiver approval, no silent bypass</small></span><svg class="chip-arrow"><use href="#icon-arrow-up-right"></use></svg></button>
                 </div>
               </div>
             </section>
@@ -211,8 +228,33 @@
                   <div class="guardrail-item"><span class="guardrail-check"><svg><use href="#icon-check"></use></svg></span><span>Always confirms amount + payee</span></div>
                   <div class="guardrail-item"><span class="guardrail-check"><svg><use href="#icon-check"></use></svg></span><span>Spots unusual amounts</span></div>
                   <div class="guardrail-item"><span class="guardrail-check"><svg><use href="#icon-check"></use></svg></span><span>Explains collect requests</span></div>
+                  <div class="guardrail-item"><span class="guardrail-check"><svg><use href="#icon-fingerprint"></use></svg></span><span>Voice PIN before every charge</span></div>
                 </div>
                 <button class="text-button" id="openSafety" type="button">Review safety rules <svg><use href="#icon-arrow-up-right"></use></svg></button>
+              </section>
+
+              <section class="mandate-card rail-card">
+                <div class="rail-card-heading"><span>CAREGIVER MANDATE</span><button class="more-button" type="button" id="mandateInfoButton" aria-label="About the caregiver mandate"><svg><use href="#icon-help"></use></svg></button></div>
+                <div class="mandate-head">
+                  <span class="mandate-icon"><svg><use href="#icon-wallet"></use></svg></span>
+                  <div class="mandate-head-copy">
+                    <strong>UPI AutoPay · hands-free</strong>
+                    <small>Set up once, visually, by a caregiver. Everyday payments then charge server-to-server.</small>
+                  </div>
+                  <span class="mandate-status" id="mandateStatus">active · hands-free</span>
+                </div>
+                <dl class="mandate-facts">
+                  <div><dt>Per transaction</dt><dd id="mandateLimit">₹5,000</dd></div>
+                  <div><dt>Used today</dt><dd id="mandateUsed">₹0 of ₹15,000 today</dd></div>
+                  <div><dt>Wallet balance</dt><dd id="walletBalance">₹12,500</dd></div>
+                  <div><dt>Mandate</dt><dd class="mono" id="mandateId">sub_local</dd></div>
+                  <div><dt>Instrument</dt><dd class="mono" id="mandateInstrument">sarala.devi@okhdfcbank</dd></div>
+                  <div><dt>Authorized by</dt><dd id="mandateCaregiver">Meera Sharma · Daughter</dd></div>
+                </dl>
+                <div class="mandate-actions">
+                  <button class="secondary-button" id="mandateSetupButton" type="button"><svg><use href="#icon-users"></use></svg> Replay caregiver setup</button>
+                  <button class="text-button" id="voicePinInfoButton" type="button">How the Voice PIN works <svg><use href="#icon-arrow-up-right"></use></svg></button>
+                </div>
               </section>
 
               <section class="payees-card rail-card">
@@ -237,9 +279,10 @@
 
               <section class="trust-card rail-card">
                 <div class="rail-card-heading"><span>TRUST CENTRE</span><button class="more-button" id="trustInfoButton" type="button" aria-label="Open trust centre"><svg><use href="#icon-shield"></use></svg></button></div>
-                <div class="trust-promise"><span class="trust-promise-icon"><svg><use href="#icon-lock"></use></svg></span><span><strong>No PINs or OTPs</strong><small>AwaazPay never asks you to speak secrets.</small></span></div>
-                <div class="trust-promise"><span class="trust-promise-icon"><svg><use href="#icon-check"></use></svg></span><span><strong>No silent payments</strong><small>A clear YES is required every time.</small></span></div>
-                <div class="caregiver-setting"><span><strong>Caregiver checks</strong><small>Required above ₹5,000</small></span><span class="setting-toggle" aria-label="Caregiver checks enabled"><span></span></span></div>
+                <div class="trust-promise"><span class="trust-promise-icon"><svg><use href="#icon-eye-off"></use></svg></span><span><strong>No visual PIN pads or OTPs</strong><small>Inside the mandate, your Voice PIN replaces the glass keypad.</small></span></div>
+                <div class="trust-promise"><span class="trust-promise-icon"><svg><use href="#icon-check"></use></svg></span><span><strong>No silent payments</strong><small>A clear YES plus a Voice PIN is required every time.</small></span></div>
+                <div class="trust-promise"><span class="trust-promise-icon"><svg><use href="#icon-lock"></use></svg></span><span><strong>Your PIN is never repeated</strong><small>Digits are redacted on screen and hashed on the server.</small></span></div>
+                <div class="caregiver-setting"><span><strong>Caregiver checks</strong><small>Required above ₹5,000 or for a new payee</small></span><span class="setting-toggle" aria-label="Caregiver checks enabled"><span></span></span></div>
                 <button class="text-button" id="trustRulesButton" type="button">View all promises <svg><use href="#icon-arrow-up-right"></use></svg></button>
               </section>
             </aside>
@@ -258,27 +301,37 @@
               <div class="loop-header"><div><span class="section-kicker">THE AGENTIC LOOP</span><h2>Understands. Checks. Asks.</h2></div><span class="loop-live"><span></span> live</span></div>
               <div class="step-list" id="stepList">
                 <div class="agent-step active" data-step="understand"><span class="step-number">01</span><span class="step-copy"><strong>Understand</strong><small>Hinglish intent → payment details</small></span><span class="step-state">ready</span></div>
-                <div class="agent-step" data-step="check"><span class="step-number">02</span><span class="step-copy"><strong>Resolve & check</strong><small>Payee history + risk signals</small></span><span class="step-state">waiting</span></div>
+                <div class="agent-step" data-step="check"><span class="step-number">02</span><span class="step-copy"><strong>Resolve &amp; check</strong><small>Payee history + risk signals</small></span><span class="step-state">waiting</span></div>
                 <div class="agent-step" data-step="confirm"><span class="step-number">03</span><span class="step-copy"><strong>Confirm aloud</strong><small>Amount + destination, every time</small></span><span class="step-state">waiting</span></div>
                 <div class="agent-step" data-step="guard"><span class="step-number">04</span><span class="step-copy"><strong>Guard</strong><small>Tripwires for pulls and lookalikes</small></span><span class="step-state">waiting</span></div>
-                <div class="agent-step" data-step="execute"><span class="step-number">05</span><span class="step-copy"><strong>Execute</strong><small>Stripe test-mode route</small></span><span class="step-state">waiting</span></div>
+                <div class="agent-step" data-step="authenticate"><span class="step-number">05</span><span class="step-copy"><strong>Voice PIN</strong><small>Spoken passcode + voiceprint match</small></span><span class="step-state">waiting</span></div>
+                <div class="agent-step" data-step="execute"><span class="step-number">06</span><span class="step-copy"><strong>Execute</strong><small>Razorpay S2S on the mandate</small></span><span class="step-state">waiting</span></div>
               </div>
-              <div class="loop-footer"><span class="privacy-lock"><svg><use href="#icon-lock"></use></svg> Your voice transcript is private</span><button class="text-button" id="loopLearnButton" type="button">How it works <svg><use href="#icon-arrow-up-right"></use></svg></button></div>
+              <div class="loop-footer"><span class="privacy-lock"><svg><use href="#icon-lock"></use></svg> Your voice transcript and PIN are private</span><button class="text-button" id="loopLearnButton" type="button">How it works <svg><use href="#icon-arrow-up-right"></use></svg></button></div>
             </section>
           </section>
 
           <section class="proof-grid" aria-label="Trust and demo proof points">
             <article class="proof-card">
               <div class="proof-card-heading"><span class="section-kicker">DEMO COVERAGE</span><span class="proof-live"><span></span> verified in flow</span></div>
-              <div class="proof-metrics"><div><strong id="metricPayments">0</strong><span>payments done</span></div><div><strong id="metricScams">0</strong><span>scams blocked</span></div><div><strong id="metricParsed">0</strong><span>commands parsed</span></div></div>
+              <div class="proof-metrics"><div><strong id="metricPayments">0</strong><span>paid hands-free</span></div><div><strong id="metricScams">0</strong><span>scams blocked</span></div><div><strong id="metricPins">0</strong><span>voice PINs matched</span></div><div><strong id="metricParsed">0</strong><span>commands parsed</span></div></div>
               <p class="proof-note"><svg><use href="#icon-activity"></use></svg><span>Measured coverage for this self-contained prototype. Replace with recorded evaluation results before submission.</span></p>
             </article>
             <article class="proof-card consent-card">
               <div class="proof-card-heading"><span class="section-kicker">CONSENT BY DESIGN</span><svg class="proof-shield"><use href="#icon-shield"></use></svg></div>
               <h3>Clarity is a safety feature.</h3>
-              <p>No payment, caregiver share, or high-risk override happens without a deliberate user action.</p>
+              <p>No payment, caregiver share, or hands-free charge happens without a spoken yes and a matched Voice PIN.</p>
               <button class="text-button" id="consentInfoButton" type="button">Read the promise <svg><use href="#icon-arrow-up-right"></use></svg></button>
             </article>
+          </section>
+
+          <section class="log-panel panel-card" aria-label="Caregiver event log">
+            <div class="log-panel-head">
+              <div><span class="section-kicker">CAREGIVER LOG · LIVE</span><h2>Everything the agent heard and decided</h2></div>
+              <div class="log-panel-meta"><span id="logCount">1 event</span><button class="secondary-button" id="openLogFromPanel" type="button">Open full replayable log <svg><use href="#icon-chevron"></use></svg></button></div>
+            </div>
+            <div class="log-entries" id="logEntries" aria-live="polite"></div>
+            <p class="log-foot"><svg><use href="#icon-lock"></use></svg><span>Voice PIN digits never appear here — they are redacted at capture and only a salted hash reaches the server.</span></p>
           </section>
 
           <footer class="page-footer"><span><span class="footer-dot"></span> Nothing real moves · Synthetic demo account</span><span>Built for Razorpay Hackathon 2026 · Track 05 Open Track</span></footer>
@@ -290,11 +343,21 @@
 
     <div class="modal-backdrop hidden" id="auditModal" role="presentation">
       <section class="modal-card audit-modal" role="dialog" aria-modal="true" aria-labelledby="auditTitle">
-        <div class="modal-header"><div><span class="section-kicker">CAREGIVER VIEW</span><h2 id="auditTitle">Replayable audit log</h2></div><button class="modal-close" id="closeAudit" type="button" aria-label="Close audit log">×</button></div>
-        <div class="audit-banner"><span class="audit-banner-icon"><svg><use href="#icon-shield"></use></svg></span><div><strong>Human-readable by design</strong><p>Every spoken request, warning, and decision is captured for a trusted caregiver.</p></div></div>
-        <div class="audit-meta"><span><strong>Session AP-2906</strong> · Today</span><span class="audit-secure"><svg><use href="#icon-lock"></use></svg> local demo log</span></div>
+        <div class="modal-header"><div><span class="section-kicker">CAREGIVER VIEW</span><h2 id="auditTitle">Replayable caregiver log</h2></div><button class="modal-close" id="closeAudit" type="button" aria-label="Close caregiver log">×</button></div>
+        <div class="audit-banner"><span class="audit-banner-icon"><svg><use href="#icon-shield"></use></svg></span><div><strong>Human-readable by design</strong><p>Every spoken request, warning, Voice PIN challenge, and mandate charge is captured for a trusted caregiver.</p></div></div>
+        <div class="audit-meta"><span><strong>Session AP-2906</strong> · Today</span><span class="audit-secure"><svg><use href="#icon-lock"></use></svg> PIN digits redacted</span></div>
         <div class="audit-entries" id="auditEntries"></div>
         <div class="modal-footer"><button class="secondary-button" id="clearAudit" type="button">Clear session</button><button class="primary-button" id="closeAuditBottom" type="button">Done</button></div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop hidden" id="mandateModal" role="presentation">
+      <section class="modal-card mandate-modal" role="dialog" aria-modal="true" aria-labelledby="mandateTitle">
+        <div class="modal-header"><div><span class="section-kicker">ONE-TIME VISUAL SETUP</span><h2 id="mandateTitle">Caregiver creates the mandate</h2></div><button class="modal-close" id="closeMandate" type="button" aria-label="Close mandate setup">×</button></div>
+        <div class="audit-banner mandate-banner"><span class="audit-banner-icon"><svg><use href="#icon-users"></use></svg></span><div><strong>The only step that needs a screen</strong><p>Meera Sharma registers a UPI AutoPay mandate (or loads a closed-loop Razorpay wallet) for Sarla Devi and enters the UPI PIN once, inside the bank's own secure surface. After that, everyday payments never show a PIN pad.</p></div></div>
+        <ol class="mandate-steps" id="mandateSteps"></ol>
+        <div class="mandate-bounds"><span><strong>₹5,000</strong> per transaction</span><span><strong>₹15,000</strong> per day</span><span><strong>3</strong> trusted payees</span></div>
+        <div class="modal-footer"><button class="primary-button" id="mandateDone" type="button" disabled>Mandate active · close</button></div>
       </section>
     </div>
 
@@ -302,13 +365,13 @@
       <section class="modal-card info-modal" role="dialog" aria-modal="true" aria-labelledby="infoTitle">
         <div class="modal-header"><div><span class="section-kicker" id="infoKicker">HOW IT WORKS</span><h2 id="infoTitle">A safer way to say “pay”</h2></div><button class="modal-close" id="closeInfo" type="button" aria-label="Close information">×</button></div>
         <div class="info-body" id="infoBody">
-          <p>AwaazPay does not blindly press Pay. It translates your words into a payment intent, checks that intent against your saved payees and spending patterns, and speaks the decision back to you.</p>
-          <div class="info-points"><div><span>1</span><strong>Say it naturally</strong><small>Hindi, English, or Hinglish phrases are welcome.</small></div><div><span>2</span><strong>Hear the truth</strong><small>Amount, payee, direction, and risk are spoken plainly.</small></div><div><span>3</span><strong>Choose deliberately</strong><small>No confirmation means no payment.</small></div></div>
+          <p>AwaazPay does not blindly press Pay. It translates your words into a payment intent, checks that intent against your saved payees, spending patterns, and caregiver mandate, and speaks the decision back to you.</p>
+          <div class="info-points"><div><span>1</span><strong>Say it naturally</strong><small>Hindi, English, or Hinglish phrases are welcome.</small></div><div><span>2</span><strong>Hear the truth</strong><small>Amount, payee, direction, and risk are spoken plainly.</small></div><div><span>3</span><strong>Choose deliberately</strong><small>No spoken yes means no payment.</small></div><div><span>4</span><strong>Say your Voice PIN</strong><small>The last step replaces the visual UPI PIN pad and releases the hands-free mandate charge.</small></div></div>
         </div>
         <div class="modal-footer"><button class="primary-button" id="closeInfoBottom" type="button">Got it</button></div>
       </section>
     </div>
 
     <script src="app.js"></script>
-  <script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a34e90a76d8a48da',t:'MTc4ODM3MzYwNw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+  </body>
 </html>
