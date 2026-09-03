@@ -88,6 +88,7 @@ svg { width: 20px; height: 20px; fill: none; }
 .profile-copy { display: grid; gap: 2px; min-width: 0; flex: 1; }
 .profile-copy strong { font-size: 11px; font-weight: 700; white-space: nowrap; }
 .profile-copy span { font-size: 9px; color: rgba(255,255,255,.42); white-space: nowrap; }
+.profile-balance { font-size: 10px !important; font-weight: 700 !important; color: var(--mint) !important; margin-top: 2px; }
 .profile-menu { border: 0; background: transparent; color: rgba(255,255,255,.4); padding: 3px; display: grid; }
 .profile-menu svg { width: 14px; height: 14px; }
 
@@ -327,6 +328,8 @@ svg { width: 20px; height: 20px; fill: none; }
 .result-icon { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; color: var(--navy); background: var(--mint); margin: 0 auto 13px; box-shadow: 0 0 0 8px rgba(201,243,109,.16); }
 .result-icon svg { width: 26px; height: 26px; stroke-width: 2.5; }
 .result-view .result-reference { color: var(--muted-light); font-size: 9px; margin-top: 9px; }
+.result-view .result-balance { font-size: 11px; color: var(--ink-soft); margin-top: 6px; }
+.result-view .result-balance strong { color: var(--teal-dark); }
 .result-view .result-actions { display: flex; justify-content: center; gap: 8px; margin-top: 16px; }
 .blocked-icon { background: var(--red-soft); color: var(--red); box-shadow: 0 0 0 8px rgba(211,93,88,.08); }
 
