@@ -552,8 +552,18 @@
    * language model. The model explains; the policy decides.
    */
   const applyRiskPolicy = (intent) => {
-    const { amount, payee, isCollect, missingFields } = intent;
-    const needsClarification = (missingFields || []).length > 0;
+    const { amount, payee, isCollect } = intent;
+    const missingFields = [...(intent.missingFields || [])];
+
+    // A pull request is judged by its direction, not by whether the sender's name resolved.
+    // Demanding a payee here would drag a scam victim into a "who should I pay?" conversation
+    // instead of warning them that money is about to leave the account.
+    if (isCollect) {
+      const payeeGap = missingFields.indexOf("payee");
+      if (payeeGap >= 0) missingFields.splice(payeeGap, 1);
+    }
+
+    const needsClarification = missingFields.length > 0;
     const mandateLimit = appState.mandate?.perTransactionLimit || 5000;
     const mandateBreach = !needsClarification && !isCollect && Boolean(amount) && amount > mandateLimit;
     const flags = [...(intent.flags || [])];

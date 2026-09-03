@@ -322,3 +322,24 @@ test('saying "cancel" at the Voice PIN step abandons the payment safely', async 
   assert.equal(text(document, '#balanceDisplay'), balanceBefore, 'the wallet must not move');
   assert.match(text(document, '#logEntries'), /Voice PIN cancelled by user/);
 });
+
+test('the pitch phrase for Scenario 2 warns instead of asking for a payee', async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { document } = await bootConsole();
+
+  // Spoken verbatim from the README demo script: no payee is named.
+  const form = document.getElementById('typedCommandForm');
+  form.classList.remove('hidden');
+  const input = document.getElementById('commandInput');
+  input.value = 'A collect request for pachas hazar has arrived';
+  form.dispatchEvent(new document.defaultView.Event('submit', { bubbles: true, cancelable: true }));
+
+  await waitFor(() => document.querySelector('#declineButton'), { label: 'the scam warning', timeout: 9000 });
+  assert.match(text(document, '#reviewContent'), /Stop — this would take money from you/);
+  assert.match(text(document, '#reviewContent'), /₹50,000/);
+  assert.match(document.getElementById('agentStatus').className, /guard/);
+  assert.ok(
+    !/CLARIFICATION NEEDED/.test(text(document, '#reviewContent')),
+    'a pull request must never be answered with "who should I pay?"',
+  );
+});

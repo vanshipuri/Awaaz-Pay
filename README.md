@@ -140,9 +140,9 @@ npm test
 | --- | --- |
 | `tests/voice-pin-engine.test.js` | The Voice Passcode Engine parses “one two three four”, “ek do teen char”, `1234`, and `1 2 3 4`; ignores filler; treats the bare word “PIN” as a Smart Demo Mode shortcut; never mistakes a payment phrase or a partial PIN for authorization; and classifies a spoken refusal (“no”, “cancel”, “band karo”) as a cancellation that beats any digit stream. It runs the **real shipped `app.js` code**, sliced into a VM sandbox. |
 | `tests/mandate-api.test.js` | Boots `server.js` and asserts: no token → no charge; wrong PIN → rejected then locked after three attempts; correct PIN → signed token → S2S capture with `visualPinPadShown: false`; above ₹5,000 → refused without a server-recorded caregiver approval; tokens cannot be replayed on another intent or forged; wallet and daily utilisation move correctly. |
-| `tests/voice-flow.e2e.test.js` | Drives the real DOM in jsdom: demo chip → **Say YES** → blue **🛡️ WAITING FOR VOICE PIN** → keypad/spoken PIN → green hands-free success, and checks the caregiver log contains the full chain **with the PIN redacted**. Also covers the wrong-PIN retry, cancelling at the PIN step, the collect-request scam, the above-mandate gate, clarification, and the caregiver setup replay. |
+| `tests/voice-flow.e2e.test.js` | Drives the real DOM in jsdom: demo chip → **Say YES** → blue **🛡️ WAITING FOR VOICE PIN** → keypad/spoken PIN → green hands-free success, and checks the caregiver log contains the full chain **with the PIN redacted**. Also covers the wrong-PIN retry, cancelling at the PIN step, the collect-request scam (including the README's exact payee-less phrase), the above-mandate gate, clarification, and the caregiver setup replay. |
 
-36 assertions pass with no provider keys configured (Smart Demo Mode).
+37 assertions pass with no provider keys configured (Smart Demo Mode).
 
 ---
 
