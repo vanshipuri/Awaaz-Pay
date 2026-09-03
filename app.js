@@ -227,6 +227,8 @@
     balance: 12500,
     mandate: { ...fallbackMandate },
     smartDemoMode: true,
+    serverAvailable: true,
+    tokenTtl: 90,
     sessionId: `SES-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
     voicePin: {
       digits: "",
@@ -2050,7 +2052,6 @@
       appState.serverAvailable = true;
       appState.smartDemoMode = health.paymentMode !== "razorpay-live";
       if (!appState.smartDemoMode) appState.mandate.demoVoicePin = null;
-      if (health.voicePin?.length) appState.pinLength = health.voicePin.length;
       dom.connectionLabel.textContent = "Backend ready";
       const modes = [];
       modes.push(health.groqConfigured ? "Groq intent" : "Smart Demo Mode");
