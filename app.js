@@ -328,7 +328,7 @@
     appState.status = nextStatus;
 
     dom.agentStatus.className = "agent-status";
-    if (["listening", "analyzing", "clarify", "review", "guard", "authenticate", "pinLocked", "blocked", "processing", "success"].includes(nextStatus)) {
+    if (["ready", "listening", "analyzing", "clarify", "review", "guard", "authenticate", "pinLocked", "blocked", "processing", "success"].includes(nextStatus)) {
       dom.agentStatus.classList.add(nextStatus);
     }
     dom.statusText.textContent = copy.label;
@@ -970,7 +970,27 @@
     6: ["six", "chhe", "chhah", "che", "siks"],
     7: ["seven", "saat", "sat", "sevenn"],
     8: ["eight", "aath", "aat", "eit"],
-    9: ["nine", "nau", "no", "nain"],
+    // "no" is deliberately NOT an alias for 9: at the PIN step it must mean "stop".
+    9: ["nine", "nau", "nain", "nao"],
+  };
+
+  /**
+   * Spoken intents at the Voice PIN step. Anything that sounds like a refusal wins over
+   * digits, because charging a user who said "no" is unrecoverable while cancelling is not.
+   */
+  const PIN_CANCEL_PATTERN =
+    /\b(cancel|cancle|cancel\s+it|stop|stop\s+it|no|nope|nahi|nahin|mat|mat\s+karo|band|bandh|band\s+karo|chhod|chhodo|chodo|ruko|rehne|rehne\s+do|abort|quit|exit|go\s+back|don'?t|dont|do\s+not)\b/i;
+  const PIN_HELP_PATTERN = /\b(repeat|again|help|madad|sahayata|samajh|samajha|kya|what|sunai|sunayi|bol)\b/i;
+
+  const detectPinIntent = (transcript) => {
+    const text = String(transcript || "").trim();
+    if (!text) return { kind: "empty", digits: "", matched: false, heard: 0, viaShortcut: false };
+
+    const parsed = extractPinDigits(text);
+    if (PIN_CANCEL_PATTERN.test(text)) return { kind: "cancel", digits: "", matched: false, heard: parsed.heard, viaShortcut: false };
+    if (parsed.matched) return { kind: "digits", ...parsed };
+    if (PIN_HELP_PATTERN.test(text)) return { kind: "help", digits: "", matched: false, heard: parsed.heard, viaShortcut: false };
+    return { kind: "partial", ...parsed };
   };
 
   const PIN_FILLER_WORDS = new Set([
@@ -1199,39 +1219,78 @@
     );
   };
 
+  /** Abandons the payment when the user refuses at the Voice PIN step. Nothing is charged. */
+  const cancelVoicePin = (payment, transcript = "") => {
+    appState.voicePin.awaitingSpokenPin = false;
+    appState.voicePin.digits = "";
+    if (appState.recognition && appState.listening) {
+      try { appState.recognition.stop(); } catch (error) { /* no-op */ }
+      appState.listening = false;
+    }
+    addAudit(
+      "Voice PIN cancelled by user",
+      `User said “${String(transcript).slice(0, 40)}” at the authorization step, so ${formatCurrency(payment.amount)} to ${payment.payee.name} was abandoned before any mandate charge.`,
+      "safe",
+      "shield",
+    );
+    resetPaymentFlow();
+    showToast("Cancelled at the Voice PIN step · nothing moved");
+    speak("Cancelled. Nothing was paid. Your mandate was not charged.");
+  };
+
   const handlePinTranscript = (transcript, payment, isFinal = true) => {
     // Privacy: the spoken PIN never appears in the visible transcript strip.
     setTranscript(`${redactedPin("1234")} Voice PIN redacted`);
-    const parsed = extractPinDigits(transcript);
+    const intent = detectPinIntent(transcript);
 
     if (!isFinal) {
-      if (parsed.heard) {
-        appState.voicePin.digits = parsed.digits;
-        refreshPinBoxes();
+      if (intent.kind === "digits" || intent.kind === "partial") {
+        if (intent.heard) {
+          appState.voicePin.digits = intent.digits;
+          refreshPinBoxes();
+        }
       }
       return;
     }
 
     appState.voicePin.awaitingSpokenPin = false;
     appState.listening = false;
+    if (!payment) return;
 
-    if (!parsed.matched) {
-      const heard = parsed.heard;
+    // "No", "cancel", "band karo" — a refusal always beats a digit stream.
+    if (intent.kind === "cancel") {
+      cancelVoicePin(payment, transcript);
+      return;
+    }
+
+    // "Repeat", "help", "kya?" — re-prompt without burning an attempt.
+    if (intent.kind === "help") {
+      appState.voicePin.digits = "";
+      refreshPinBoxes();
+      const message = `No problem. To authorize ${formatCurrency(payment.amount)} to ${payment.payee.name}, say your ${PIN_LENGTH} digit Voice PIN one digit at a time, for example one two three four. Say cancel if you do not want to pay.`;
+      addAudit("Voice PIN help requested", "The agent repeated the authorization instruction. No attempt was counted.", "safe", "help");
+      renderVoicePin(payment, { error: message });
+      speakThenListenForPin(payment, message);
+      return;
+    }
+
+    if (intent.kind !== "digits") {
+      const heard = intent.heard;
       appState.voicePin.digits = "";
       refreshPinBoxes();
       const message = heard
-        ? `I only caught ${heard} digit${heard === 1 ? "" : "s"}. Please say all ${PIN_LENGTH} digits of your Voice PIN, one at a time.`
-        : `I did not hear your Voice PIN. Please say ${PIN_LENGTH} digits, for example one two three four, or use the keypad on screen.`;
+        ? `I only caught ${heard} digit${heard === 1 ? "" : "s"}. Please say all ${PIN_LENGTH} digits of your Voice PIN, one at a time — or say cancel to stop.`
+        : `I did not hear your Voice PIN. Please say ${PIN_LENGTH} digits, for example one two three four, use the keypad on screen, or say cancel to stop.`;
       addAudit("Voice PIN not captured", heard ? `Only ${heard} of ${PIN_LENGTH} digits were heard; no attempt was counted.` : "Speech was not recognized; no attempt was counted.", "warning", "mic");
       renderVoicePin(payment, { error: message });
       speakThenListenForPin(payment, message);
       return;
     }
 
-    if (parsed.viaShortcut) {
-      addAudit("Voice shortcut used", `The word “PIN” was heard, so the configured Smart Demo Mode PIN was submitted. Digits shown as ${redactedPin(parsed.digits)}.`, "warning", "help");
+    if (intent.viaShortcut) {
+      addAudit("Voice shortcut used", `The word “PIN” was heard, so the configured Smart Demo Mode PIN was submitted. Digits shown as ${redactedPin(intent.digits)}.`, "warning", "help");
     }
-    submitVoicePin(payment, parsed.digits, "voice");
+    submitVoicePin(payment, intent.digits, "voice");
   };
 
   const submitVoicePin = async (payment, digits, source = "voice") => {

@@ -293,3 +293,32 @@ test('the caregiver mandate setup can be replayed for judges', async (t) => {
   click(document, '#mandateDone');
   assert.ok(document.getElementById('mandateModal').classList.contains('hidden'));
 });
+
+test('saying "cancel" at the Voice PIN step abandons the payment safely', async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { document } = await bootConsole();
+
+  const balanceBefore = text(document, '#balanceDisplay');
+  click(document, '[data-demo="safe"]');
+  await waitFor(() => document.querySelector('#confirmPayment'), { label: 'the confirmation button' });
+  click(document, '#confirmPayment');
+  await waitFor(() => !document.getElementById('pinBadge').classList.contains('hidden'), { label: 'the PIN badge' });
+
+  // Refuse out loud — driven through the typed fallback, which reaches the same handler.
+  const form = document.getElementById('typedCommandForm');
+  form.classList.remove('hidden');
+  const input = document.getElementById('commandInput');
+  input.value = 'no cancel';
+  form.dispatchEvent(new document.defaultView.Event('submit', { bubbles: true, cancelable: true }));
+
+  await waitFor(() => !document.getElementById('reviewEmpty').classList.contains('hidden'), {
+    label: 'a return to the idle console',
+    timeout: 9000,
+  });
+  assert.match(document.getElementById('agentStatus').className, /\bready\b/);
+  assert.match(text(document, '#agentHeadline'), /What would you like to pay for/);
+  assert.ok(document.getElementById('pinBadge').classList.contains('hidden'), 'the PIN badge must clear');
+  assert.equal(text(document, '#metricPayments'), '0', 'nothing may be paid after a refusal');
+  assert.equal(text(document, '#balanceDisplay'), balanceBefore, 'the wallet must not move');
+  assert.match(text(document, '#logEntries'), /Voice PIN cancelled by user/);
+});

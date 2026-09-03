@@ -35,7 +35,10 @@ const buildEngine = ({ smartDemoMode = true, demoVoicePin = '1234' } = {}) => {
     appState: { smartDemoMode, mandate: { demoVoicePin } },
   };
   vm.createContext(sandbox);
-  vm.runInContext(`${pinEngineSource}\nthis.extractPinDigits = extractPinDigits;`, sandbox);
+  vm.runInContext(
+    `${pinEngineSource}\nthis.extractPinDigits = extractPinDigits;\nthis.detectPinIntent = detectPinIntent;`,
+    sandbox,
+  );
   return sandbox;
 };
 
@@ -104,4 +107,53 @@ test('a wrong PIN never parses into the right one', () => {
 test('the demo shortcut follows the configured mandate PIN', () => {
   const { extractPinDigits } = buildEngine({ demoVoicePin: '2468' });
   assert.equal(extractPinDigits('pin').digits, '2468');
+});
+
+/* --- spoken intent at the PIN step: refusal must always beat digits ------ */
+
+test('a spoken refusal is classified as cancel, never as digits', () => {
+  const { detectPinIntent } = buildEngine();
+  for (const phrase of ['no', 'No', 'cancel', 'cancel it', 'stop', 'nahi', 'mat karo', 'band karo', 'chhod do', 'ruko', 'rehne do', "don't", 'do not pay', 'go back']) {
+    assert.equal(detectPinIntent(phrase).kind, 'cancel', `"${phrase}" should cancel`);
+  }
+});
+
+test('cancel wins even when digits are present in the same breath', () => {
+  const { detectPinIntent } = buildEngine();
+  // Fail-safe: charging a user who said "no" is unrecoverable; re-prompting is not.
+  assert.equal(detectPinIntent('no no one two three four').kind, 'cancel');
+  assert.equal(detectPinIntent('cancel 1234').kind, 'cancel');
+});
+
+test('"no" is not mistaken for the digit nine', () => {
+  const { extractPinDigits, detectPinIntent } = buildEngine();
+  assert.equal(extractPinDigits('no').heard, 0, '"no" must not parse as 9');
+  assert.equal(extractPinDigits('nau').digits, '9', 'Hindi nine still works');
+  assert.equal(extractPinDigits('nine').digits, '9');
+  assert.equal(detectPinIntent('nau ek do teen').kind, 'digits');
+  assert.equal(detectPinIntent('nau ek do teen').digits, '9123');
+});
+
+test('a help request is classified separately so it does not burn an attempt', () => {
+  const { detectPinIntent } = buildEngine();
+  for (const phrase of ['repeat', 'say that again', 'help', 'madad', 'kya', 'what']) {
+    assert.equal(detectPinIntent(phrase).kind, 'help', `"${phrase}" should ask for help`);
+  }
+});
+
+test('a complete PIN is classified as digits', () => {
+  const { detectPinIntent } = buildEngine();
+  assert.equal(detectPinIntent('one two three four').kind, 'digits');
+  assert.equal(detectPinIntent('ek do teen char').digits, '1234');
+  assert.equal(detectPinIntent('1234').kind, 'digits');
+  assert.equal(detectPinIntent('PIN').kind, 'digits');
+  assert.equal(detectPinIntent('PIN').viaShortcut, true);
+});
+
+test('partial and empty speech are neither cancel nor digits', () => {
+  const { detectPinIntent } = buildEngine();
+  assert.equal(detectPinIntent('one two').kind, 'partial');
+  assert.equal(detectPinIntent('one two').heard, 2);
+  assert.equal(detectPinIntent('').kind, 'empty');
+  assert.equal(detectPinIntent('hmm').kind, 'partial');
 });

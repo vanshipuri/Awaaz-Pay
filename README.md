@@ -51,6 +51,7 @@ Demo Voice PIN: **1234** (configurable via `AWAAZPAY_VOICE_PIN`). Three wrong at
 - **Caregiver Mandate** — live mandate card showing per-transaction and daily bounds, wallet balance, authorized instrument, and a replay of the one-time visual caregiver setup.
 - **Fraud Guard** — intercepts “collect request” pull scams, inflated amounts, and lookalike payees via explicit context reasoning.
 - **Voice PIN** — spoken passcode engine (`1234`, “one two three four”, “ek do teen char”, or the word “PIN”) + simulated voiceprint match, securing the hands-free loop in place of a visual UPI PIN.
+- **Refusal Beats Digits** — saying “no”, “cancel”, or “band karo” at the PIN prompt abandons the payment immediately, even if digits follow in the same breath. “Repeat” / “help” re-prompts without burning an attempt.
 - **Server-Side Authorization** — the PIN is hashed on the server and exchanged for an **HMAC-signed, 90-second, intent-bound mandate-auth token**. `/api/payment/execute` refuses to run without it.
 - **Mandate Enforcement on the Server** — amount bounds, daily utilisation, and wallet balance are re-checked server-side, so the language model can never talk its way past policy.
 - **Caregiver Audit Trail** — full transparent text log of what the user requested, what the agent reasoned, and what was charged. PIN digits are redacted at capture and never stored.
@@ -137,11 +138,11 @@ npm test
 
 | File | What it proves |
 | --- | --- |
-| `tests/voice-pin-engine.test.js` | The Voice Passcode Engine parses “one two three four”, “ek do teen char”, `1234`, and `1 2 3 4`; ignores filler; treats the bare word “PIN” as a Smart Demo Mode shortcut; never mistakes a payment phrase or a partial PIN for authorization. It runs the **real shipped `app.js` code**, sliced into a VM sandbox. |
+| `tests/voice-pin-engine.test.js` | The Voice Passcode Engine parses “one two three four”, “ek do teen char”, `1234`, and `1 2 3 4`; ignores filler; treats the bare word “PIN” as a Smart Demo Mode shortcut; never mistakes a payment phrase or a partial PIN for authorization; and classifies a spoken refusal (“no”, “cancel”, “band karo”) as a cancellation that beats any digit stream. It runs the **real shipped `app.js` code**, sliced into a VM sandbox. |
 | `tests/mandate-api.test.js` | Boots `server.js` and asserts: no token → no charge; wrong PIN → rejected then locked after three attempts; correct PIN → signed token → S2S capture with `visualPinPadShown: false`; above ₹5,000 → refused without a server-recorded caregiver approval; tokens cannot be replayed on another intent or forged; wallet and daily utilisation move correctly. |
-| `tests/voice-flow.e2e.test.js` | Drives the real DOM in jsdom: demo chip → **Say YES** → blue **🛡️ WAITING FOR VOICE PIN** → keypad/spoken PIN → green hands-free success, and checks the caregiver log contains the full chain **with the PIN redacted**. Also covers the collect-request scam, the above-mandate gate, clarification, and the caregiver setup replay. |
+| `tests/voice-flow.e2e.test.js` | Drives the real DOM in jsdom: demo chip → **Say YES** → blue **🛡️ WAITING FOR VOICE PIN** → keypad/spoken PIN → green hands-free success, and checks the caregiver log contains the full chain **with the PIN redacted**. Also covers the wrong-PIN retry, cancelling at the PIN step, the collect-request scam, the above-mandate gate, clarification, and the caregiver setup replay. |
 
-29 assertions pass with no provider keys configured (Smart Demo Mode).
+36 assertions pass with no provider keys configured (Smart Demo Mode).
 
 ---
 
