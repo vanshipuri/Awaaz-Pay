@@ -243,6 +243,84 @@ test('mandate utilisation and wallet balance move after a capture', async () => 
   assert.equal(after.body.wallet.balance, before.body.wallet.balance - 500);
 });
 
+test('a hands-free charge to a payee outside the mandate allowlist is refused', async () => {
+  // ₹500 is inside the limit, so the only thing stopping this is the caregiver's allowlist.
+  const intentId = 'INT-LOOKALIKE';
+  const pin = await verifyPin({
+    intentId,
+    amountPaise: 50000,
+    payee: 'Sharma Kiran Store',
+    payeeVpa: 'sharma.kirana@okaxis',
+    sessionId: 'allowlist-session',
+  });
+  // Refused before the PIN is even scored, so an unauthorized payee cannot burn attempts.
+  assert.equal(pin.status, 422);
+  assert.equal(pin.body.code, 'payee_not_on_mandate');
+  assert.equal(pin.body.authToken, undefined);
+  assert.ok(pin.body.authorizedPayees.includes('Sharma Kirana'));
+});
+
+test('an unauthorized payee refusal does not consume a PIN attempt', async () => {
+  const sessionId = 'allowlist-attempts';
+  const payload = { intentId: 'INT-ATTEMPTS', amountPaise: 50000, payee: 'Sharma Kiran Store', sessionId };
+
+  const first = await verifyPin(payload);
+  const second = await verifyPin(payload);
+  assert.equal(first.status, 422);
+  assert.equal(second.status, 422);
+
+  // The same session can still authorize a legitimate payee afterwards.
+  const recovered = await verifyPin({ ...payload, payee: 'Sharma Kirana', payeeVpa: 'sharmakirana@ybl' });
+  assert.equal(recovered.status, 200);
+  assert.equal(recovered.body.verified, true);
+});
+
+test('the allowlist matches on VPA as well as name', async () => {
+  const intentId = 'INT-VPA';
+  const pin = await verifyPin({
+    intentId,
+    amountPaise: 24000,
+    payee: 'Rakesh Medical',
+    payeeVpa: 'rakesh.med@ybl',
+    sessionId: 'vpa-session',
+  });
+  const executed = await post('/api/payment/execute', {
+    authToken: pin.body.authToken,
+    intentId,
+    amountPaise: 24000,
+    payee: 'Rakesh Medical',
+    payeeVpa: 'rakesh.med@ybl',
+  });
+  assert.equal(executed.status, 200);
+  assert.equal(executed.body.payment.status, 'captured');
+});
+
+test('a caregiver approval authorizes a one-off payee outside the allowlist', async () => {
+  const intentId = 'INT-ONEOFF';
+  // Deliberately inside the ₹5,000 cap: the only thing blocking this payee is the allowlist.
+  const amountPaise = 50000;
+  const approval = await post('/api/caregiver/approve', { intentId, amountPaise, payee: 'Aman Traders' });
+  const pin = await verifyPin({
+    intentId,
+    amountPaise,
+    payee: 'Aman Traders',
+    payeeVpa: 'aman.traders@paytm',
+    caregiverApprovalId: approval.body.approvalId,
+    sessionId: 'oneoff-session',
+  });
+  assert.equal(pin.body.authorizationMode, 'caregiver-assisted');
+
+  const executed = await post('/api/payment/execute', {
+    authToken: pin.body.authToken,
+    intentId,
+    amountPaise,
+    payee: 'Aman Traders',
+    payeeVpa: 'aman.traders@paytm',
+  });
+  assert.equal(executed.status, 200);
+  assert.equal(executed.body.authorizationMode, 'caregiver-assisted');
+});
+
 test('an unknown API route is not silently treated as a payment', async () => {
   const { status, body } = await post('/api/payment/free-money', {});
   assert.equal(status, 404);

@@ -1318,6 +1318,7 @@
       intentId: payment.intentId,
       amountPaise: Math.round(payment.amount * 100),
       payee: payment.payee.name,
+      payeeVpa: payment.payee.vpa,
       sampleMs: source === "voice" ? 1400 : 0,
       // The signed approval id from /api/caregiver/approve — required above the mandate limit.
       caregiverApprovalId: appState.caregiverApprovalId || null,
@@ -1341,14 +1342,16 @@
         lockVoicePin(payment, body.reason || "Too many incorrect Voice PIN attempts.");
         return;
       }
-      if (response.status === 422 && body.code === "caregiver_approval_required") {
-        // A policy refusal, not a PIN failure: do not burn an attempt.
+      if (response.status === 422) {
+        // A policy refusal (above the mandate cap, or a payee the caregiver never authorized),
+        // not a PIN failure — so it must not burn an attempt.
         appState.voicePin.verifying = false;
         appState.voicePin.digits = "";
-        addAudit("Mandate limit enforced by server", body.reason, "danger", "shield");
+        const label = body.code === "payee_not_on_mandate" ? "Payee not on mandate" : "Mandate limit enforced by server";
+        addAudit(label, `${body.reason}${body.authorizedPayees ? ` Authorized: ${body.authorizedPayees.join(", ")}.` : ""}`, "danger", "shield");
         renderVoicePin(payment, { error: body.reason });
         speak(body.reason);
-        showToast("Above mandate limit · caregiver approval needed", "danger");
+        showToast(body.code === "payee_not_on_mandate" ? "Payee not authorized on the mandate" : "Above mandate limit · caregiver approval needed", "danger");
         return;
       }
       onPinRejected(payment, body.reason || "That did not match your Voice PIN.", body.attemptsLeft, body.voiceprint);

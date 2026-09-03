@@ -109,6 +109,19 @@ const caregiverApprovals = new Map();
 const signApproval = (approvalId) =>
   crypto.createHmac('sha256', AUTH_SECRET).update(`approval:${approvalId}`).digest('base64url');
 
+/**
+ * The mandate authorizes specific merchants. A hands-free charge to anyone else is refused
+ * here even if the client-side gate was somehow skipped — a lookalike payee is not on the
+ * caregiver's allowlist, so it can never be charged silently.
+ */
+const isAuthorizedPayee = (name, vpa) => {
+  const n = String(name || '').trim().toLowerCase();
+  const v = String(vpa || '').trim().toLowerCase();
+  return mandateState.authorizedPayees.some(
+    (payee) => (n && payee.name.toLowerCase() === n) || (v && payee.vpa.toLowerCase() === v),
+  );
+};
+
 const registerCaregiverApproval = (payload) => {
   const intentId = String(payload.intentId || '').slice(0, 40);
   const amountPaise = Number(payload.amountPaise);
@@ -406,12 +419,12 @@ const verifyVoicePin = (payload) => {
     return { status: 400, body: { verified: false, reason: 'amountPaise must be a positive integer up to ₹100,000.' } };
   }
 
-  // Above the hands-free limit, a Voice PIN alone is not enough: the server must already
-  // hold a caregiver approval for this exact intent and amount.
+  // A caregiver approval upgrades the charge in two cases: it is above the hands-free limit,
+  // or the payee is not on the mandate's authorized list. Either way the approval must already
+  // be recorded here for this exact intent and amount — the browser cannot assert one.
   const perTxnPaise = mandateState.perTransactionLimit * 100;
-  const approval = amountPaise > perTxnPaise
-    ? findCaregiverApproval(payload.intentId, amountPaise, payload.caregiverApprovalId)
-    : null;
+  const payeeAuthorized = isAuthorizedPayee(payload.payee, payload.payeeVpa);
+  const approval = findCaregiverApproval(payload.intentId, amountPaise, payload.caregiverApprovalId);
   if (amountPaise > perTxnPaise && !approval) {
     return {
       status: 422,
@@ -419,6 +432,19 @@ const verifyVoicePin = (payload) => {
         verified: false,
         code: 'caregiver_approval_required',
         reason: `₹${(amountPaise / 100).toLocaleString('en-IN')} is above the ₹${mandateState.perTransactionLimit.toLocaleString('en-IN')} hands-free mandate limit. A caregiver must approve it before a Voice PIN can authorize it.`,
+      },
+    };
+  }
+
+  // Refuse before the PIN is even checked, so an unauthorized payee cannot burn attempts.
+  if (!payeeAuthorized && !approval) {
+    return {
+      status: 422,
+      body: {
+        verified: false,
+        code: 'payee_not_on_mandate',
+        reason: `${payload.payee || 'That payee'} is not on the caregiver mandate's authorized list. A caregiver must approve this payee first.`,
+        authorizedPayees: mandateState.authorizedPayees.map((payee) => payee.name),
       },
     };
   }
@@ -460,6 +486,7 @@ const verifyVoicePin = (payload) => {
     intentId: String(payload.intentId || '').slice(0, 40),
     amountPaise,
     payee: String(payload.payee || '').slice(0, 100),
+    payeeVpa: String(payload.payeeVpa || '').slice(0, 100),
     mandateId: mandateState.id,
     tokenId: mandateState.tokenId,
     // Derived from the server-recorded approval, never from a client-asserted boolean.
@@ -590,6 +617,16 @@ const handleAPI = async (req, res) => {
         (amountPaise <= perTxnPaise || Boolean(findCaregiverApproval(claims.intentId, amountPaise, claims.caregiverApprovalId)));
 
       // Server-enforced mandate bounds. This is the compliance boundary the pitch rests on.
+      if (!caregiverAssisted && !isAuthorizedPayee(claims.payee, claims.payeeVpa || body.payeeVpa)) {
+        json(res, 422, {
+          error: `${claims.payee || 'That payee'} is not on the caregiver mandate's authorized list.`,
+          code: 'payee_not_on_mandate',
+          requiresCaregiver: true,
+          authorizedPayees: mandateState.authorizedPayees.map((payee) => payee.name),
+          productionBehaviour: 'A hands-free charge is only allowed to a merchant the caregiver authorized.',
+        });
+        return true;
+      }
       if (amountPaise > perTxnPaise && !caregiverAssisted) {
         json(res, 422, {
           error: `₹${amountRupees.toLocaleString('en-IN')} is above the ₹${mandateState.perTransactionLimit.toLocaleString('en-IN')} hands-free mandate limit.`,

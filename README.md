@@ -18,7 +18,7 @@ In production, **AwaazPay** leverages **Caregiver Mandates**:
 2. **Hands-Free Execution (daily).** Because the mandate is pre-authorized up to a limit (**₹5,000 per transaction** in India, per RBI's UPI AutoPay rules), subsequent payments are executed via direct **Razorpay Server-to-Server API calls** — the UI glass PIN pad is never triggered.
 3. **Voice Biometrics (device-level security).** To ensure a bystander cannot just grab the phone and shout “Pay ₹500”, AwaazPay inserts its own **Voice PIN + voiceprint check** before the backend charge is allowed.
 
-**Above the mandate limit, there is no bypass.** The server refuses the charge (`422 amount_outside_mandate`) and requires caregiver authorization; in production that amount falls back to the bank's visual UPI PIN screen.
+**Above the mandate limit, there is no bypass.** The server refuses the charge (`422 amount_outside_mandate`) and requires caregiver authorization; in production that amount falls back to the bank's visual UPI PIN screen. The same is true for a payee the caregiver never authorized (`422 payee_not_on_mandate`) — a lookalike merchant cannot be charged silently even if the client-side gate is skipped.
 
 ### When the judges ask
 
@@ -53,7 +53,7 @@ Demo Voice PIN: **1234** (configurable via `AWAAZPAY_VOICE_PIN`). Three wrong at
 - **Voice PIN** — spoken passcode engine (`1234`, “one two three four”, “ek do teen char”, or the word “PIN”) + simulated voiceprint match, securing the hands-free loop in place of a visual UPI PIN.
 - **Refusal Beats Digits** — saying “no”, “cancel”, or “band karo” at the PIN prompt abandons the payment immediately, even if digits follow in the same breath. “Repeat” / “help” re-prompts without burning an attempt.
 - **Server-Side Authorization** — the PIN is hashed on the server and exchanged for an **HMAC-signed, 90-second, intent-bound mandate-auth token**. `/api/payment/execute` refuses to run without it.
-- **Mandate Enforcement on the Server** — amount bounds, daily utilisation, and wallet balance are re-checked server-side, so the language model can never talk its way past policy.
+- **Mandate Enforcement on the Server** — per-transaction cap, daily utilisation, wallet balance, and the **payee allowlist** the caregiver authorized are all re-checked server-side, so neither the language model nor a crafted API call can talk its way past policy.
 - **Caregiver Audit Trail** — full transparent text log of what the user requested, what the agent reasoned, and what was charged. PIN digits are redacted at capture and never stored.
 - **Accessible Fallbacks** — on-screen keypad, physical keyboard digits, typed commands, `aria-live` status, and keyboard shortcuts for environments without a microphone.
 
@@ -122,7 +122,7 @@ Never commit `.env` — it is git-ignored. Razorpay secret keys and the auth sec
 | `POST` | `/api/intent` | Groq-backed Hinglish intent parsing with a bounded JSON schema (`fallback` when no key). |
 | `POST` | `/api/caregiver/approve` | Records and signs a caregiver approval for an above-mandate amount (intent + amount bound). |
 | `POST` | `/api/voice-pin/verify` | Hashed PIN compare + simulated voiceprint match → HMAC mandate-auth token (90s TTL). 3 strikes → `423`. Above the cap without an approval → `422`. |
-| `POST` | `/api/payment/execute` | Requires a valid token; re-checks mandate bounds; charges via Razorpay S2S (or simulates it). |
+| `POST` | `/api/payment/execute` | Requires a valid token; re-checks the payee allowlist, per-transaction cap, daily utilisation, and wallet balance; charges via Razorpay S2S (or simulates it). |
 | `POST` / `GET` | `/api/payment/verify`, `/api/payment/session` | Payment status lookup by `payment_id`. |
 
 ---
@@ -139,10 +139,10 @@ npm test
 | File | What it proves |
 | --- | --- |
 | `tests/voice-pin-engine.test.js` | The Voice Passcode Engine parses “one two three four”, “ek do teen char”, `1234`, and `1 2 3 4`; ignores filler; treats the bare word “PIN” as a Smart Demo Mode shortcut; never mistakes a payment phrase or a partial PIN for authorization; and classifies a spoken refusal (“no”, “cancel”, “band karo”) as a cancellation that beats any digit stream. It runs the **real shipped `app.js` code**, sliced into a VM sandbox. |
-| `tests/mandate-api.test.js` | Boots `server.js` and asserts: no token → no charge; wrong PIN → rejected then locked after three attempts; correct PIN → signed token → S2S capture with `visualPinPadShown: false`; above ₹5,000 → refused without a server-recorded caregiver approval; tokens cannot be replayed on another intent or forged; wallet and daily utilisation move correctly. |
+| `tests/mandate-api.test.js` | Boots `server.js` and asserts: no token → no charge; wrong PIN → rejected then locked after three attempts; correct PIN → signed token → S2S capture with `visualPinPadShown: false`; above ₹5,000 → refused without a server-recorded caregiver approval; a payee outside the mandate allowlist → refused without burning an attempt; tokens cannot be replayed on another intent or forged; wallet and daily utilisation move correctly. |
 | `tests/voice-flow.e2e.test.js` | Drives the real DOM in jsdom: demo chip → **Say YES** → blue **🛡️ WAITING FOR VOICE PIN** → keypad/spoken PIN → green hands-free success, and checks the caregiver log contains the full chain **with the PIN redacted**. Also covers the wrong-PIN retry, cancelling at the PIN step, the collect-request scam (including the README's exact payee-less phrase), the above-mandate gate, clarification, and the caregiver setup replay. |
 
-37 assertions pass with no provider keys configured (Smart Demo Mode).
+41 assertions pass with no provider keys configured (Smart Demo Mode).
 
 ---
 
