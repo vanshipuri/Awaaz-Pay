@@ -725,6 +725,37 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+server.on('error', (error) => {
+  if (error.code !== 'EADDRINUSE') throw error;
+
+  const isWindows = process.platform === 'win32';
+  const altPort = port + 1;
+  console.error('');
+  console.error(`✖ Port ${port} is already in use, so AwaazPay could not start.`);
+  console.error('  5173 is also Vite’s default port — a leftover dev server is the usual cause.');
+  console.error('');
+  if (isWindows) {
+    console.error('  Easiest fix — run on another port (PowerShell):');
+    console.error(`    $env:PORT=${altPort}; npm run dev`);
+    console.error('');
+    console.error(`  Or find and stop whatever holds ${port}:`);
+    console.error(`    Get-NetTCPConnection -LocalPort ${port} -State Listen | ForEach-Object { Get-Process -Id $_.OwningProcess }`);
+    console.error('    Stop-Process -Id <PID> -Force');
+    console.error('');
+    console.error(`  If nothing is listed, Windows may have reserved the port (Hyper-V/WSL):`);
+    console.error('    netsh interface ipv4 show excludedportrange protocol=tcp');
+  } else {
+    console.error('  Easiest fix — run on another port:');
+    console.error(`    PORT=${altPort} npm run dev`);
+    console.error('');
+    console.error(`  Or find and stop whatever holds ${port}:`);
+    console.error(`    lsof -i :${port}`);
+    console.error('    kill -9 <PID>');
+  }
+  console.error('');
+  process.exit(1);
+});
+
 server.listen(port, host, () => {
   console.log(`AwaazPay is running at http://localhost:${port}`);
   console.log(`Intent mode: ${process.env.GROQ_API_KEY ? `Groq (${process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'})` : 'Smart Demo Mode · local AI simulator'}`);
