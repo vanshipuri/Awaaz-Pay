@@ -34,6 +34,10 @@
     infoTitle: byId("infoTitle"),
     infoKicker: byId("infoKicker"),
     infoBody: byId("infoBody"),
+    balanceDisplay: byId("balanceDisplay"),
+    metricPayments: byId("metricPayments"),
+    metricScams: byId("metricScams"),
+    metricParsed: byId("metricParsed"),
   };
 
   const payeeProfiles = {
@@ -157,6 +161,13 @@
     awaitingClarification: false,
     toastTimer: null,
     recognition: null,
+    balance: 12500,
+    metrics: {
+      paymentsCompleted: 0,
+      scamsBlocked: 0,
+      commandsAttempted: 0,
+      commandsParsed: 0,
+    },
     audit: [
       {
         time: "Session start",
@@ -267,26 +278,100 @@
   };
 
   const amountInWords = (amount) => {
-    const known = {
-      240: "two hundred and forty",
-      500: "five hundred",
-      1200: "one thousand two hundred",
-      2000: "two thousand",
-      5000: "five thousand",
-      50000: "fifty thousand",
-    };
-    return known[amount] || `${formatNumber(amount)} rupees`;
+    const ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
+      'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+    const tenths = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+    const sub100 = (n) => n < 20 ? ones[n] : tenths[Math.floor(n / 10)] + (n % 10 ? ' ' + ones[n % 10] : '');
+    const sub1000 = (n) => n < 100 ? sub100(n) : ones[Math.floor(n / 100)] + ' hundred' + (n % 100 ? ' and ' + sub100(n % 100) : '');
+    if (!amount) return 'zero';
+    if (amount >= 100000) {
+      const l = Math.floor(amount / 100000);
+      const r = amount % 100000;
+      return sub100(l) + ' lakh' + (r ? ' ' + amountInWords(r) : '');
+    }
+    if (amount >= 1000) {
+      const t = Math.floor(amount / 1000);
+      const r = amount % 1000;
+      return sub100(t) + ' thousand' + (r ? ' ' + sub1000(r) : '');
+    }
+    return sub1000(amount);
+  };
+
+  const updateBalance = () => {
+    if (dom.balanceDisplay) dom.balanceDisplay.textContent = formatCurrency(appState.balance);
+  };
+
+  const updateMetrics = () => {
+    if (dom.metricPayments) dom.metricPayments.textContent = appState.metrics.paymentsCompleted;
+    if (dom.metricScams) dom.metricScams.textContent = appState.metrics.scamsBlocked;
+    if (dom.metricParsed) dom.metricParsed.textContent = appState.metrics.commandsParsed;
   };
 
   const parseAmount = (text) => {
     const normalized = text.toLowerCase().replaceAll(",", "").replaceAll("₹", "");
     const phraseAmounts = [
+      // Lakhs
+      [/ek\s*lakh|one\s*lakh/, 100000],
+      // Fifty thousand
       [/pachaas\s*(hazaar|hazar)|pachas\s*(hazaar|hazar)|fifty\s*thousand|fifty\s*k\b/, 50000],
-      [/paanch\s*(sau| सौ)|panch\s*(sau| सौ)|five\s*hundred/, 500],
+      // Forty thousand
+      [/chaalees\s*(hazaar|hazar)|chalees\s*(hazaar|hazar)|forty\s*thousand/, 40000],
+      // Thirty thousand
+      [/tees\s*(hazaar|hazar)|thirty\s*thousand/, 30000],
+      // Twenty five thousand
+      [/pachees\s*(hazaar|hazar)|twenty[\s-]?five\s*thousand/, 25000],
+      // Twenty thousand
+      [/bees\s*(hazaar|hazar)|twenty\s*thousand/, 20000],
+      // Fifteen thousand
+      [/pandrah\s*(hazaar|hazar)|pandraha\s*(hazaar|hazar)|fifteen\s*thousand/, 15000],
+      // Twelve thousand
+      [/baarah\s*(hazaar|hazar)|barah\s*(hazaar|hazar)|twelve\s*thousand/, 12000],
+      // Ten thousand
+      [/das\s*(hazaar|hazar)|ten\s*thousand/, 10000],
+      // Nine thousand
+      [/nau\s*(hazaar|hazar)|nine\s*thousand/, 9000],
+      // Eight thousand
+      [/aath\s*(hazaar|hazar)|eight\s*thousand/, 8000],
+      // Seven thousand
+      [/saat\s*(hazaar|hazar)|seven\s*thousand/, 7000],
+      // Six thousand
+      [/chhe\s*(hazaar|hazar)|chay\s*(hazaar|hazar)|six\s*thousand/, 6000],
+      // Five thousand
+      [/paanch\s*(hazaar|hazar)|panch\s*(hazaar|hazar)|five\s*thousand/, 5000],
+      // Four thousand
+      [/chaar\s*(hazaar|hazar)|char\s*(hazaar|hazar)|four\s*thousand/, 4000],
+      // Three thousand
+      [/teen\s*(hazaar|hazar)|three\s*thousand/, 3000],
+      // Two thousand
       [/do\s*(hazaar|hazar)|two\s*thousand/, 2000],
+      // One thousand
+      [/ek\s*(hazaar|hazar)|one\s*thousand/, 1000],
+      // Twelve hundred (before nine/eight hundred to avoid partial match on "twelve")
       [/baarah\s*sau|barah\s*sau|twelve\s*hundred/, 1200],
+      // Nine hundred
+      [/nau\s*(sau|सौ)|nine\s*hundred/, 900],
+      // Eight hundred
+      [/aath\s*(sau|सौ)|eight\s*hundred/, 800],
+      // Seven hundred
+      [/saat\s*(sau|सौ)|seven\s*hundred/, 700],
+      // Six hundred
+      [/chhe\s*(sau|सौ)|chay\s*(sau|सौ)|six\s*hundred/, 600],
+      // Five hundred
+      [/paanch\s*(sau|सौ)|panch\s*(sau|सौ)|five\s*hundred/, 500],
+      // Four hundred
+      [/chaar\s*(sau|सौ)|char\s*(sau|सौ)|four\s*hundred/, 400],
+      // Three hundred
+      [/teen\s*(sau|सौ)|three\s*hundred/, 300],
+      // Two hundred forty
       [/do\s*sau\s*chaalees|two\s*hundred\s*and\s*forty/, 240],
-      [/paanch\s*hazaar|panch\s*hazaar|five\s*thousand/, 5000],
+      // Two hundred
+      [/do\s*(sau|सौ)|two\s*hundred/, 200],
+      // One hundred fifty
+      [/dedh\s*(sau|सौ)|one\s*fifty|hundred\s*fifty/, 150],
+      // One hundred
+      [/ek\s*(sau|सौ)|one\s*hundred/, 100],
+      // Fifty (must come after "fifty thousand")
+      [/pachaas\b(?!\s*(hazaar|hazar))|fifty\b(?!\s*(thousand|k))/, 50],
     ];
     for (const [pattern, amount] of phraseAmounts) {
       if (pattern.test(normalized)) return { amount, matched: true };
@@ -640,6 +725,10 @@
     });
 
     cancelButton?.addEventListener("click", () => {
+      if (payment.riskLevel === "critical" || payment.riskLevel === "high") {
+        appState.metrics.scamsBlocked += 1;
+        updateMetrics();
+      }
       addAudit("Payment cancelled", "User chose not to continue after the safety check.", "safe", "check");
       resetPaymentFlow();
       showToast("Cancelled. Nothing moved.");
@@ -680,6 +769,7 @@
           <h2>Test payment complete</h2>
           <p>${formatCurrency(payment.amount)} paid to ${escapeHTML(payment.payee.name)}.</p>
           <div class="result-reference">${escapeHTML(resolvedReference)} · Stripe test mode · ${escapeHTML(timeNow())}</div>
+          <div class="result-balance">Your balance is now <strong>${formatCurrency(appState.balance)}</strong></div>
           <div class="result-actions"><button class="primary-button" id="startAnother" type="button">Start another payment</button><button class="secondary-button" id="viewAuditFromResult" type="button">View audit log</button></div>
         </div>
       </div>`;
@@ -722,10 +812,14 @@
 
   const completePayment = (payment, reference, provider = "simulated") => {
     const isRealTestMode = provider === "stripe";
+    appState.balance = Math.max(0, appState.balance - payment.amount);
+    appState.metrics.paymentsCompleted += 1;
+    updateBalance();
+    updateMetrics();
     addAudit("Payment complete", `${formatCurrency(payment.amount)} ${isRealTestMode ? "Stripe test" : "simulated test"} payment sent to ${payment.payee.name}.`, "safe", "check");
     setState("success");
     renderSuccess(payment, reference);
-    speak(`Done. ${amountInWords(payment.amount)} paid to ${payment.payee.name}. ${isRealTestMode ? "Stripe test payment completed." : "This was a test payment; no real money moved."}`);
+    speak(`Done. ${amountInWords(payment.amount)} rupees paid to ${payment.payee.name}. Your balance is now ${amountInWords(appState.balance)} rupees. ${isRealTestMode ? "Stripe test payment completed." : "This was a test payment; no real money moved."}`);
     showToast(isRealTestMode ? "Stripe test payment complete" : "Test payment complete · nothing real moved");
   };
 
@@ -807,10 +901,12 @@
   };
 
   const declineCollect = (payment) => {
+    appState.metrics.scamsBlocked += 1;
+    updateMetrics();
     addAudit("Collect request declined", `${formatCurrency(payment.amount)} request declined. Nothing left the account.`, "danger", "shield");
     setState("blocked");
     renderBlocked(payment);
-    speak(`Stop confirmed. The collect request for ${amountInWords(payment.amount)} was declined. Nothing left your account.`);
+    speak(`Stop confirmed. The collect request for ${amountInWords(payment.amount)} rupees was declined. Nothing left your account.`);
     showToast("Request declined safely · no money moved");
   };
 
@@ -893,6 +989,8 @@
     const token = appState.analysisToken;
     window.clearTimeout(appState.analysisTimer);
     window.clearTimeout(appState.caregiverTimer);
+    appState.metrics.commandsAttempted += 1;
+    updateMetrics();
     setTranscript(raw);
     setState("analyzing");
     showReviewLoading();
@@ -915,6 +1013,8 @@
         speak(buildClarificationPrompt(parsed));
         return;
       }
+      appState.metrics.commandsParsed += 1;
+      updateMetrics();
       const riskDetail = parsed.isCollect
         ? `Collect request detected for ${formatCurrency(parsed.amount)}; it would pull money from the user.`
         : parsed.payee.mismatch || !parsed.payee.trusted
@@ -1199,6 +1299,8 @@
   setupRecognition();
   renderAudit();
   setState("ready");
+  updateBalance();
+  updateMetrics();
   loadServerHealth();
   handleStripeReturn();
 })();
