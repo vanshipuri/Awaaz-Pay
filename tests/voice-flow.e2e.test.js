@@ -124,8 +124,10 @@ test('the console boots into Smart Demo Mode with the mandate loaded', async (t)
   assert.match(text(document, '#providerMode'), /Smart Demo Mode/);
   assert.match(text(document, '#mandateLimit'), /5,000/);
   assert.match(text(document, '#mandateStatus'), /active/);
-  assert.equal(document.querySelectorAll('#stepList .agent-step').length, 6, 'the loop should include the Voice PIN step');
+  assert.equal(document.querySelectorAll('#stepList .agent-step').length, 8, 'the loop should show all eight agentic steps');
   assert.match(text(document, '#stepList'), /Voice PIN/);
+  assert.match(text(document, '#stepList'), /Confirm aloud/);
+  assert.match(text(document, '#stepList'), /Audit/);
   assert.ok(document.getElementById('pinBadge').classList.contains('hidden'), 'PIN badge starts hidden');
 });
 

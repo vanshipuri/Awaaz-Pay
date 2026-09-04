@@ -127,9 +127,9 @@
         </button>
 
         <div class="profile-card">
-          <div class="profile-avatar">SD</div>
-          <div class="profile-copy"><strong>Sarla Devi</strong><span>Personal account</span><span class="profile-balance" id="balanceDisplay">₹12,500</span></div>
-          <button class="profile-menu" type="button" aria-label="Open profile menu"><svg><use href="#icon-chevron-down"></use></svg></button>
+          <div class="profile-avatar" id="profileAvatar">SD</div>
+          <div class="profile-copy"><strong id="profileName">Sarla Devi</strong><span>Personal account</span><span class="profile-balance" id="balanceDisplay">₹12,500</span></div>
+          <button class="profile-menu" id="profileMenuButton" type="button" aria-label="Open caregiver setup"><svg><use href="#icon-chevron-down"></use></svg></button>
         </div>
       </aside>
 
@@ -258,23 +258,25 @@
               </section>
 
               <section class="payees-card rail-card">
-                <div class="rail-card-heading"><span>KNOWN PAYEES</span><button class="more-button" type="button" aria-label="Open payees"><svg><use href="#icon-chevron"></use></svg></button></div>
-                <div class="payee-row">
-                  <div class="payee-avatar yellow">SK</div>
-                  <div class="payee-copy"><strong>Sharma Kirana</strong><span>sharmakirana@ybl</span></div>
-                  <div class="payee-usual"><span>usual</span><strong>₹500</strong></div>
+                <div class="rail-card-heading"><span>TRUSTED PAYEES</span><button class="more-button" id="payeesAddButton" type="button" aria-label="Add a trusted payee in caregiver setup"><svg><use href="#icon-chevron"></use></svg></button></div>
+                <div class="payee-list" id="payeeList">
+                  <div class="payee-row">
+                    <div class="payee-avatar yellow">SK</div>
+                    <div class="payee-copy"><strong>Sharma Kirana</strong><span>sharmakirana@ybl</span></div>
+                    <div class="payee-usual"><span>usual</span><strong>₹500</strong></div>
+                  </div>
+                  <div class="payee-row">
+                    <div class="payee-avatar purple">RM</div>
+                    <div class="payee-copy"><strong>Rakesh Medical</strong><span>rakesh.med@ybl</span></div>
+                    <div class="payee-usual"><span>usual</span><strong>₹240</strong></div>
+                  </div>
+                  <div class="payee-row">
+                    <div class="payee-avatar blue">MU</div>
+                    <div class="payee-copy"><strong>Mehta Utilities</strong><span>mehta.utility@ybl</span></div>
+                    <div class="payee-usual"><span>usual</span><strong>₹1,200</strong></div>
+                  </div>
                 </div>
-                <div class="payee-row">
-                  <div class="payee-avatar purple">RM</div>
-                  <div class="payee-copy"><strong>Rakesh Medical</strong><span>rakesh.med@ybl</span></div>
-                  <div class="payee-usual"><span>usual</span><strong>₹240</strong></div>
-                </div>
-                <div class="payee-row">
-                  <div class="payee-avatar blue">MU</div>
-                  <div class="payee-copy"><strong>Mehta Utilities</strong><span>mehta.utility@ybl</span></div>
-                  <div class="payee-usual"><span>usual</span><strong>₹1,200</strong></div>
-                </div>
-                <div class="payees-foot"><span>3 trusted payees</span><span class="verified-label"><svg><use href="#icon-shield"></use></svg> verified</span></div>
+                <div class="payees-foot"><span id="payeesCount">3 trusted payees</span><span class="verified-label"><svg><use href="#icon-shield"></use></svg> on the mandate</span></div>
               </section>
 
               <section class="trust-card rail-card">
@@ -300,12 +302,14 @@
             <section class="loop-card panel-card">
               <div class="loop-header"><div><span class="section-kicker">THE AGENTIC LOOP</span><h2>Understands. Checks. Asks.</h2></div><span class="loop-live"><span></span> live</span></div>
               <div class="step-list" id="stepList">
-                <div class="agent-step active" data-step="understand"><span class="step-number">01</span><span class="step-copy"><strong>Understand</strong><small>Hinglish intent → payment details</small></span><span class="step-state">ready</span></div>
-                <div class="agent-step" data-step="check"><span class="step-number">02</span><span class="step-copy"><strong>Resolve &amp; check</strong><small>Payee history + risk signals</small></span><span class="step-state">waiting</span></div>
-                <div class="agent-step" data-step="confirm"><span class="step-number">03</span><span class="step-copy"><strong>Confirm aloud</strong><small>Amount + destination, every time</small></span><span class="step-state">waiting</span></div>
-                <div class="agent-step" data-step="guard"><span class="step-number">04</span><span class="step-copy"><strong>Guard</strong><small>Tripwires for pulls and lookalikes</small></span><span class="step-state">waiting</span></div>
-                <div class="agent-step" data-step="authenticate"><span class="step-number">05</span><span class="step-copy"><strong>Voice PIN</strong><small>Spoken passcode + voiceprint match</small></span><span class="step-state">waiting</span></div>
-                <div class="agent-step" data-step="execute"><span class="step-number">06</span><span class="step-copy"><strong>Execute</strong><small>Razorpay S2S on the mandate</small></span><span class="step-state">waiting</span></div>
+                <div class="agent-step active" data-step="understand"><span class="step-number">01</span><span class="step-copy"><strong>Understand</strong><small>Speech-to-text · Hindi, English, Hinglish intent</small></span><span class="step-state">ready</span></div>
+                <div class="agent-step" data-step="clarify"><span class="step-number">02</span><span class="step-copy"><strong>Clarify if needed</strong><small>Never invents a missing amount or payee</small></span><span class="step-state">waiting</span></div>
+                <div class="agent-step" data-step="check"><span class="step-number">03</span><span class="step-copy"><strong>Resolve &amp; check</strong><small>Trusted payees, history, direction, identity</small></span><span class="step-state">waiting</span></div>
+                <div class="agent-step" data-step="confirm"><span class="step-number">04</span><span class="step-copy"><strong>Confirm aloud</strong><small>Amount + destination spoken back · say YES or NO</small></span><span class="step-state">waiting</span></div>
+                <div class="agent-step" data-step="guard"><span class="step-number">05</span><span class="step-copy"><strong>Guard</strong><small>Tripwires: pulls, lookalikes, big amounts, caregiver approval</small></span><span class="step-state">waiting</span></div>
+                <div class="agent-step" data-step="authenticate"><span class="step-number">06</span><span class="step-copy"><strong>Voice PIN</strong><small>Spoken passcode + voiceprint → signed token</small></span><span class="step-state">waiting</span></div>
+                <div class="agent-step" data-step="execute"><span class="step-number">07</span><span class="step-copy"><strong>Execute &amp; verify</strong><small>Razorpay S2S on the mandate · outcome verified</small></span><span class="step-state">waiting</span></div>
+                <div class="agent-step" data-step="audit"><span class="step-number">08</span><span class="step-copy"><strong>Audit</strong><small>Full decision trail for the caregiver</small></span><span class="step-state">waiting</span></div>
               </div>
               <div class="loop-footer"><span class="privacy-lock"><svg><use href="#icon-lock"></use></svg> Your voice transcript and PIN are private</span><button class="text-button" id="loopLearnButton" type="button">How it works <svg><use href="#icon-arrow-up-right"></use></svg></button></div>
             </section>
@@ -354,9 +358,55 @@
     <div class="modal-backdrop hidden" id="mandateModal" role="presentation">
       <section class="modal-card mandate-modal" role="dialog" aria-modal="true" aria-labelledby="mandateTitle">
         <div class="modal-header"><div><span class="section-kicker">ONE-TIME VISUAL SETUP</span><h2 id="mandateTitle">Caregiver creates the mandate</h2></div><button class="modal-close" id="closeMandate" type="button" aria-label="Close mandate setup">×</button></div>
-        <div class="audit-banner mandate-banner"><span class="audit-banner-icon"><svg><use href="#icon-users"></use></svg></span><div><strong>The only step that needs a screen</strong><p>Meera Sharma registers a UPI AutoPay mandate (or loads a closed-loop Razorpay wallet) for Sarla Devi and enters the UPI PIN once, inside the bank's own secure surface. After that, everyday payments never show a PIN pad.</p></div></div>
+        <div class="audit-banner mandate-banner"><span class="audit-banner-icon"><svg><use href="#icon-users"></use></svg></span><div><strong>The only step that needs a screen</strong><p><span id="mandateBannerCaregiver">The caregiver</span> registers a UPI AutoPay mandate (or loads a closed-loop Razorpay wallet) for <span id="mandateBannerElder">the account holder</span> and enters the UPI PIN once, inside the bank's own secure surface. After that, everyday payments never show a PIN pad.</p></div></div>
         <ol class="mandate-steps" id="mandateSteps"></ol>
-        <div class="mandate-bounds"><span><strong>₹5,000</strong> per transaction</span><span><strong>₹15,000</strong> per day</span><span><strong>3</strong> trusted payees</span></div>
+        <div class="mandate-bounds" id="mandateBounds"><span><strong>₹5,000</strong> per transaction</span><span><strong>₹15,000</strong> per day</span><span><strong id="boundsPayeeCount">3</strong> trusted payees</span></div>
+
+        <div class="caregiver-profile-setup" id="caregiverProfileSetup">
+          <div class="bio-enroll-head">
+            <span class="section-kicker">CAREGIVER PROFILE · THE ONE-TIME VISUAL SETUP</span>
+            <p>This is filled in once, on a screen, by the trusted family member. It personalises the account holder, the caregiver who gets approval calls, the hands-free limits, the Voice PIN, and the merchants that can be paid without touching the bank app.</p>
+          </div>
+
+          <form class="profile-form" id="caregiverProfileForm" autocomplete="off">
+            <fieldset class="profile-fieldset">
+              <legend>Account holder</legend>
+              <label class="profile-field"><span>Full name</span><input id="elderNameInput" type="text" placeholder="Sarla Devi" maxlength="60" /></label>
+              <label class="profile-field"><span>Phone</span><input id="elderContactInput" type="tel" inputmode="numeric" placeholder="98123 00000" maxlength="12" /></label>
+            </fieldset>
+            <fieldset class="profile-fieldset">
+              <legend>Trusted caregiver</legend>
+              <label class="profile-field"><span>Caregiver name</span><input id="caregiverNameInput" type="text" placeholder="Meera Sharma" maxlength="60" /></label>
+              <label class="profile-field"><span>Relationship</span><input id="caregiverRelationshipInput" type="text" placeholder="Daughter" maxlength="40" /></label>
+              <label class="profile-field"><span>Phone for approvals</span><input id="caregiverPhoneInput" type="tel" placeholder="+91 98200 11223" maxlength="16" /></label>
+            </fieldset>
+            <fieldset class="profile-fieldset">
+              <legend>Hands-free bounds</legend>
+              <label class="profile-field"><span>Per-transaction limit (₹)</span><input id="perTxnLimitInput" type="number" min="100" max="15000" step="100" placeholder="5000" /></label>
+              <label class="profile-field"><span>Daily limit (₹)</span><input id="dailyLimitInput" type="number" min="100" max="50000" step="500" placeholder="15000" /></label>
+            </fieldset>
+            <fieldset class="profile-fieldset">
+              <legend>Voice PIN</legend>
+              <label class="profile-field profile-field-wide"><span>Set a 4–6 digit Voice PIN (spoken out loud at payment time)</span><input id="voicePinSetInput" type="password" inputmode="numeric" autocomplete="new-password" placeholder="Leave blank to keep the current PIN" maxlength="6" /></label>
+            </fieldset>
+            <div class="profile-form-actions">
+              <button class="primary-button" id="saveCaregiverProfile" type="submit"><svg><use href="#icon-check"></use></svg> Save caregiver profile</button>
+              <span class="profile-save-note" id="profileSaveNote" role="status" aria-live="polite"></span>
+            </div>
+          </form>
+
+          <form class="payee-add-form" id="payeeAddForm" autocomplete="off">
+            <span class="section-kicker">ADD A TRUSTED PAYEE</span>
+            <div class="payee-add-row">
+              <label class="profile-field"><span>Merchant name</span><input id="newPayeeName" type="text" placeholder="Gupta Dairy" maxlength="60" /></label>
+              <label class="profile-field"><span>UPI ID</span><input id="newPayeeVpa" type="text" placeholder="gupta.dairy@okhdfcbank" maxlength="80" /></label>
+              <label class="profile-field"><span>Usual amount (₹, optional)</span><input id="newPayeeUsual" type="number" min="0" step="10" placeholder="120" /></label>
+              <button class="secondary-button" id="addPayeeButton" type="submit"><svg><use href="#icon-check"></use></svg> Add</button>
+            </div>
+            <p class="payee-add-note">Only merchants on this allowlist can ever be charged hands-free. Anyone else — including a lookalike name — is refused server-side and needs caregiver approval.</p>
+          </form>
+        </div>
+
         <div class="bio-enroll" id="bioEnroll">
           <div class="bio-enroll-head">
             <span class="section-kicker">BIOMETRIC ENROLLMENT · ONE TIME</span>

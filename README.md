@@ -37,22 +37,29 @@ In production, **AwaazPay** leverages **Caregiver Mandates**:
 This repository is configured to demonstrate the core value of AwaazPay **out of the box**. A **Smart Demo Mode** (local AI simulator + simulated Razorpay S2S capture) runs every flow with **no API keys**.
 
 1. Click the **Microphone Button** and allow microphone permissions (or use **Type a command** / the demo chips).
-2. **Scenario 1 (Normal Payment)**: Speak *“Sharma kirana ko paanch sau rupaye bhejo”*.
-3. **Say yes — or say exit**: The agent confirms payee, amount, direction, and mandate headroom, and you answer *out loud*. “Yes” / “haan bhej do” confirms; **“exit”, “no transfer”, “cancel”, or “nahi” abandons the payment and charges nothing**. Clicking **Say YES · confirm payment** still works and goes through the identical gate.
-4. **Biometric confirmation**: The console switches to a blue **🛡️ WAITING FOR BIOMETRIC** state. With a voiceprint enrolled, your spoken “yes” already matched it, so nothing further is needed; otherwise pick **Voice biometric**, **Fingerprint**, or **Face scan**. Enroll all three once from **Replay caregiver setup**, where the caregiver also decides whether a device biometric may skip the PIN.
-5. **Voice PIN**: The badge switches to **🛡️ WAITING FOR VOICE PIN** and the agent asks: *“Confirmed. Please say your 4 digit Voice PIN to authorize this payment hands-free.”* Say **“One Two Three Four”** (or **“ek do teen char”**, or just the word **“PIN”** in Smart Demo Mode).
-6. **Scenario 2 (Scam Guard)**: Say *“A collect request for pachas hazar has arrived”*. The agent detects the pull-request attack and explicitly warns you to cancel.
-7. **Scenario 3 (Mandate Guard)**: Click **Above mandate limit** (₹6,000). The agent refuses to bypass the visual PIN and demands caregiver approval first.
-8. **Caregiver Log**: Notice the complete transparent event log at the bottom of the page — and the replayable full log in the **Audit log** button.
+2. **Caregiver setup (one time, visual)**: Open **Replay caregiver setup**. The caregiver fills in their own profile — account holder name, caregiver name + relationship + approval phone, per-transaction and daily hands-free limits (only *tighter* than the RBI ceiling is allowed), a new 4–6 digit **Voice PIN** — and adds trusted merchants to the payee allowlist. Everything is saved server-side and reflected in the console immediately.
+3. **Scenario 1 (Normal Payment)**: Speak *“Sharma kirana ko paanch sau rupaye bhejo”*.
+4. **Say YES or NO out loud — no tapping needed**: The agent speaks the payee, amount, direction, and mandate headroom, then **the microphone re-opens by itself and waits for your answer**. Say **“yes” / “haan bhej do” / “theek hai”** to proceed to the Voice PIN; say **“no” / “nahi” / “exit” / “no transfer”** and the payment is cancelled with nothing charged. (Clicking **Say YES · confirm payment** still works through the identical gate.)
+5. **Biometric confirmation (optional)**: The console switches to a blue **🛡️ WAITING FOR BIOMETRIC** state. With a voiceprint enrolled, your spoken “yes” already matched it, so nothing further is needed; otherwise pick **Voice biometric**, **Fingerprint**, or **Face scan**. Enroll all three once from **Replay caregiver setup**, where the caregiver also decides whether a device biometric may skip the PIN.
+6. **Voice PIN**: The badge switches to **🛡️ WAITING FOR VOICE PIN** and the agent asks: *“Confirmed. Please say your 4 digit Voice PIN to authorize this payment hands-free.”* Say **“One Two Three Four”** (or **“ek do teen char”**, or just the word **“PIN”** in Smart Demo Mode).
+7. **Scenario 2 (Scam Guard)**: Say *“A collect request for pachas hazar has arrived”*. The agent detects the pull-request attack and explicitly warns you to cancel.
+8. **Scenario 3 (Mandate Guard)**: Click **Above mandate limit** (₹6,000). The agent refuses to bypass the visual PIN and demands caregiver approval first.
+9. **Caregiver Log**: Notice the complete transparent event log at the bottom of the page — and the replayable full log in the **Audit log** button.
 
-Demo Voice PIN: **1234** (configurable via `AWAAZPAY_VOICE_PIN`). Three wrong attempts lock the PIN and abandon the payment.
+Demo Voice PIN: **1234** (configurable via `AWAAZPAY_VOICE_PIN`, or change it live in caregiver setup). Three wrong attempts lock the PIN and abandon the payment.
+
+> 🎬 **Presenting this?** A word-for-word live demo script, the ⭐ **star story** (Sarla & Meera),
+> ten **failure stories** (“what happens when…”), and the hard judge Q&A are in
+> **[`docs/demo-script.md`](docs/demo-script.md)**.
 
 ---
 
 ## 🛠 Features
 
 - **Voice First** — massive touch target, audio orchestration, and auto-reopening mic mean you never need to look at the screen.
+- **Hands-Free YES / NO** — after the agent reads the summary aloud it listens again on its own: a spoken “yes” moves to the Voice PIN, a spoken “no” cancels and charges nothing. No tap is required anywhere in the payment loop.
 - **Agentic Intent Parsing** — natural language / Hinglish payment intents, with a no-guess clarification flow when the amount or payee is missing.
+- **Caregiver Profile Setup** — the one-time visual screen lets the caregiver set the account holder's and caregiver's names, relationship and approval phone, tighten the hands-free per-transaction and daily limits, choose a new Voice PIN, and add trusted merchants to the payee allowlist.
 - **Caregiver Mandate** — live mandate card showing per-transaction and daily bounds, wallet balance, authorized instrument, and a replay of the one-time visual caregiver setup.
 - **Fraud Guard** — intercepts “collect request” pull scams, inflated amounts, and lookalike payees via explicit context reasoning.
 - **Voice PIN** — spoken passcode engine (`1234`, “one two three four”, “ek do teen char”, or the word “PIN”) + simulated voiceprint match, securing the hands-free loop in place of a visual UPI PIN.
@@ -113,8 +120,10 @@ npm start
 | `GROQ_API_KEY` / `GROQ_MODEL` | Real LLM intent parsing instead of the local simulator. |
 | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | Live S2S order + tokenized recurring UPI AutoPay charge. |
 | `RAZORPAY_UPI_TOKEN_ID` | The mandate token registered during caregiver setup. |
-| `MANDATE_PER_TXN_LIMIT` / `MANDATE_DAILY_LIMIT` | Hands-free bounds (defaults ₹5,000 / ₹15,000). |
-| `AWAAZPAY_VOICE_PIN` | Demo Voice PIN (default `1234`). |
+| `MANDATE_PER_TXN_LIMIT` / `MANDATE_DAILY_LIMIT` | Hands-free bounds (defaults ₹5,000 / ₹15,000). The caregiver can only tighten these in setup. |
+| `ELDER_NAME` / `ELDER_CONTACT` | Account holder defaults shown in the caregiver setup. |
+| `CAREGIVER_NAME` / `CAREGIVER_RELATIONSHIP` / `CAREGIVER_PHONE` | Caregiver defaults (who receives above-limit approval requests). |
+| `AWAAZPAY_VOICE_PIN` | Initial demo Voice PIN (default `1234`); the caregiver can change it in setup. |
 | `AWAAZPAY_PIN_SALT` / `AWAAZPAY_AUTH_SECRET` | PIN hashing salt and mandate-auth token signing key. |
 
 Never commit `.env` — it is git-ignored. Razorpay secret keys and the auth secret must stay server-side; only the mandate-auth token ever reaches the browser.
@@ -126,8 +135,11 @@ Never commit `.env` — it is git-ignored. Razorpay secret keys and the auth sec
 | Method | Route | What it does |
 | --- | --- | --- |
 | `GET` | `/api/health` | Reports intent mode, payment mode, PIN policy, and mandate id. |
-| `GET` | `/api/mandate` | The caregiver-created mandate: bounds, utilisation, wallet, instrument, authorized payees, and enrolled biometrics. |
+| `GET` | `/api/mandate` | The caregiver-created mandate: account holder + caregiver profile, bounds, utilisation, wallet, instrument, authorized payees, and enrolled biometrics. |
 | `POST` | `/api/intent` | Groq-backed Hinglish intent parsing with a bounded JSON schema (`fallback` when no key). |
+| `POST` | `/api/caregiver/profile` | Caregiver sets the account holder name/phone, caregiver name/relationship/approval phone, and per-transaction/daily hands-free bounds (only tighter than the RBI ceiling is accepted). |
+| `POST` | `/api/caregiver/payees` | Adds (or updates) a trusted merchant on the mandate's hands-free allowlist — name, UPI VPA, optional usual amount. |
+| `POST` | `/api/voice-pin/set` | Caregiver sets a new 4–6 digit Voice PIN during setup; only the salted hash is stored. |
 | `POST` | `/api/caregiver/approve` | Records and signs a caregiver approval for an above-mandate amount (intent + amount bound). |
 | `POST` | `/api/biometric/challenge` | Issues a single-use WebAuthn challenge (`register` or `assert`) for the platform authenticator. |
 | `POST` | `/api/biometric/enroll` | Enrolls a voiceprint sample, or a fingerprint/face credential from a real WebAuthn attestation (COSE key parsed server-side). Falls back to a labelled simulation. |
@@ -151,11 +163,11 @@ npm test
 | File | What it proves |
 | --- | --- |
 | `tests/voice-pin-engine.test.js` | The confirmation classifier reads “yes”, “haan bhej do”, “theek hai” as approval and “exit”, “no transfer”, “cancel”, “mat bhejo”, “ji nahi” as refusal, with refusal winning inside a single breath and substring lookalikes (“yesterday”, “known”) ignored. The Voice Passcode Engine parses “one two three four”, “ek do teen char”, `1234`, and `1 2 3 4`; ignores filler; treats the bare word “PIN” as a Smart Demo Mode shortcut; never mistakes a payment phrase or a partial PIN for authorization; and classifies a spoken refusal (“no”, “cancel”, “band karo”) as a cancellation that beats any digit stream. It runs the **real shipped `app.js` code**, sliced into a VM sandbox. |
-| `tests/mandate-api.test.js` | Boots `server.js` and asserts: no token → no charge; wrong PIN → rejected then locked after three attempts; correct PIN → signed token → S2S capture with `visualPinPadShown: false`; above ₹5,000 → refused without a server-recorded caregiver approval; a payee outside the mandate allowlist → refused without burning an attempt; tokens cannot be replayed on another intent or forged; wallet and daily utilisation move correctly. Biometrics: an unenrolled factor is refused, a voiceprint confirms but can never issue a charge token even with the caregiver toggle on, a fingerprint with the toggle on yields a token that captures with `authorizationFactor: fingerprint`, and no biometric can bypass the payee allowlist or the ₹5,000 cap. |
+| `tests/mandate-api.test.js` | Boots `server.js` and asserts: no token → no charge; wrong PIN → rejected then locked after three attempts; correct PIN → signed token → S2S capture with `visualPinPadShown: false`; above ₹5,000 → refused without a server-recorded caregiver approval; a payee outside the mandate allowlist → refused without burning an attempt; tokens cannot be replayed on another intent or forged; wallet and daily utilisation move correctly. Caregiver profile: profile edits update names/bounds and a tightened cap is enforced immediately, bounds can never be widened past the RBI ceiling, a caregiver-set Voice PIN replaces the old one (and 4–6 digits are enforced), a newly added payee can pay hands-free while a malformed UPI ID is rejected, and re-adding a payee updates rather than duplicates. Biometrics: an unenrolled factor is refused, a voiceprint confirms but can never issue a charge token even with the caregiver toggle on, a fingerprint with the toggle on yields a token that captures with `authorizationFactor: fingerprint`, and no biometric can bypass the payee allowlist or the ₹5,000 cap. |
 | `tests/biometric-flow.e2e.test.js` | Drives the real DOM in jsdom: caregiver enrollment from the mandate modal → a spoken “yes” matched by the enrolled voiceprint → blue **🛡️ WAITING FOR BIOMETRIC** → fingerprint authorizes the charge with **no PIN at all** once the caregiver allows it, and the receipt names the factor. Also covers the unenrolled-factor detour, the Voice PIN fallback, and cancelling from the biometric step. |
 | `tests/voice-flow.e2e.test.js` | Drives the real DOM in jsdom: demo chip → **Say YES** → blue **🛡️ WAITING FOR VOICE PIN** → keypad/spoken PIN → green hands-free success, and checks the caregiver log contains the full chain **with the PIN redacted**. Also covers the spoken yes (which used to be re-parsed as a new command and destroy the payment), spoken “exit no transfer”, unrelated speech keeping the payment open, the wrong-PIN retry, cancelling at the PIN step, the collect-request scam (including the README's exact payee-less phrase), the above-mandate gate, clarification, and the caregiver setup replay. |
 
-68 assertions pass with no provider keys configured (Smart Demo Mode).
+75 assertions pass with no provider keys configured (Smart Demo Mode).
 
 ---
 
@@ -184,9 +196,87 @@ Useful voice or typed phrases:
 
 ## 🏗 The agentic loop
 
-`01 Understand → 02 Resolve & check → 03 Confirm aloud → 04 Guard → 05 Biometric + Voice PIN → 06 Execute (Razorpay S2S)`
+The same eight steps run in the console's live “agentic loop” panel, in `server.js` policy
+checks, and in the tests. **The LLM explains; the deterministic policy decides.** Every Groq
+intent is re-run through `applyRiskPolicy()` in the browser, and every charge is re-checked
+against the mandate on the server, so a hallucinated amount can never produce a payment.
 
-The LLM **explains**; the deterministic policy **decides**. Every Groq intent is re-run through `applyRiskPolicy()` in the browser, and every charge is re-checked against the mandate in `server.js`, so a hallucinated amount can never produce a payment.
+```text
+USER:
+  “Sharma kirana ko paanch sau rupaye bhejo.”
+  “Send 500 rupees to Sharma Kirana.”
+          |
+          v
+1. UNDERSTAND
+   Browser speech-to-text captures the request.
+   Groq interprets Hindi, English, Hinglish, and code-switching.
+   Example structured output:
+     intent=pay
+     payeeQuery=“Sharma Kirana”
+     amountPaise=50000
+     direction=push
+     confidence=0.98
+          |
+          v
+2. CLARIFY IF NEEDED
+   AwaazPay never invents missing details.
+   “Rakesh Medical ko pay karo.”
+   → “How much should I send to Rakesh Medical?”
+          |
+          v
+3. RESOLVE & CHECK
+   The agent matches the request against trusted payees and synthetic payment history.
+   - Is Sharma Kirana a known payee?
+   - Is ₹500 within the user’s normal range?
+   - Is this a payment started by the user?
+   - Is it a collect request that pulls money from the user?
+   - Does the account identity match the requested payee?
+          |
+          v
+4. CONFIRM ALOUD
+   “You are about to pay ₹500, five hundred rupees,
+    to Sharma Kirana at sharmakirana@ybl.
+    This is a payment you started.
+    Say YES to confirm or NO to cancel.”
+   The microphone re-opens on its own — the answer is spoken, never tapped.
+          |
+          v
+5. GUARD
+   The deterministic policy applies safety tripwires.
+   - Unusually large amount      → warning and spoken acknowledgement
+   - New or unknown payee        → additional verification
+   - Payee identity mismatch     → warning (lookalike merchant)
+   - Collect request             → explains that money will leave the user’s account
+   - High-risk payment           → caregiver approval flow
+   - Above the ₹5,000 mandate    → server refuses a silent bypass; caregiver must approve
+          |
+          v
+6. VOICE PIN  (replaces the visual UPI PIN pad)
+   “Confirmed. Please say your 4 digit Voice PIN to authorize this payment hands-free.”
+   The spoken PIN is redacted at capture, hashed on the server with a salt,
+   compared in constant time alongside a voiceprint match, and exchanged for an
+   HMAC-signed, 90-second, intent-bound mandate-auth token.
+          |
+          v
+7. EXECUTE & VERIFY
+   With that token the secure server creates a Razorpay order and runs the
+   tokenized UPI AutoPay charge server-to-server (/v1/orders + /v1/payments/create/recurring).
+   If Razorpay credentials are not configured, the demo uses a simulated test payment
+   with the identical response shape and the identical server-side mandate checks.
+   “Done. ₹500 was paid to Sharma Kirana.
+    This was a Razorpay S2S mandate charge — no PIN pad was opened.”
+          |
+          v
+8. AUDIT
+   The request, parsed intent, safety signals, warnings, confirmations,
+   caregiver decision, Voice PIN result (digits redacted), and payment outcome
+   are recorded in the caregiver audit log.
+```
+
+The spoken confirmation step is fully hands-free: after the agent reads the summary aloud
+it listens again automatically — **“yes” / “haan bhej do”** proceeds to the Voice PIN, and
+**“no” / “nahi” / “exit”** cancels the payment and charges nothing. Refusal is matched before
+approval, so “no, don’t transfer” can never be read as a yes.
 
 ---
 
