@@ -1,9 +1,27 @@
 {
   "name": "awaazpay-demo",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "AwaazPay voice-first payment companion demo for the Razorpay Hackathon 2026.",
+  "description": "AwaazPay — a voice-first, hands-free payment companion for the blind, low-literacy and elderly. Razorpay Hackathon 2026, Track 05 Open Track.",
+  "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "keywords": [
+    "voice-payments",
+    "accessibility",
+    "razorpay",
+    "upi-autopay",
+    "voice-biometrics",
+    "hackathon"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "jsdom": "^30.0.1"
   }
 }
