@@ -865,6 +865,101 @@
     bindReviewActions(p);
   };
 
+  /**
+   * True when the utterance names a payee or an amount, i.e. the user is changing the
+   * payment ("pay Ramesh two thousand instead") rather than answering the yes/no question.
+   * Those must still fall through to the normal parser, which merges them with the pending
+   * intent as a clarification.
+   */
+  const mentionsPaymentDetail = (transcript) => {
+    const text = String(transcript || "").trim();
+    if (!text) return false;
+    const parsed = parseCommand(text);
+    return Boolean(parsed.payeeMatched || parsed.amountMatched);
+  };
+
+  /**
+   * The single gate out of the review step into authorization. Both the on-screen
+   * "Say YES" button and a spoken/biometric yes come through here, so the safety guards
+   * cannot be bypassed by choosing a different input method.
+   *
+   * Confirmation never moves money: it only unlocks the authorization challenge.
+   */
+  const proceedFromReview = (payment, source = "click", transcript = "") => {
+    if (!payment) return;
+    const heard = String(transcript).slice(0, 40);
+
+    // A collect request pulls money out and is never covered by the mandate, so a spoken
+    // "yes" here must be refused rather than honored.
+    if (payment.isCollect) {
+      addAudit("Confirmation refused", `User said “${heard}” but ${formatCurrency(payment.amount)} is a collect request, which pulls money out and is never charged on the mandate.`, "danger", "shield");
+      showToast("A collect request cannot be paid hands-free", "danger");
+      speak("I cannot pay a collect request. It takes money out of your account, and my mandate never covers that. Say no to decline it.");
+      return;
+    }
+
+    if (payment.riskAcknowledgement && !appState.riskAcknowledged) {
+      if (source === "click") {
+        showToast("Please acknowledge the spoken warning first.", "danger");
+        speak("Please acknowledge the warning after you verify the details.");
+        return;
+      }
+      // Accessible equivalent of the acknowledgement checkbox: the warning was spoken
+      // aloud and the user answered it out loud. Recorded so the caregiver can see that
+      // the pause happened by voice rather than by tap.
+      appState.riskAcknowledged = true;
+      addAudit(
+        "Warning acknowledged by voice",
+        `User said “${heard}” after hearing the ${payment.riskLevel} risk warning for ${formatCurrency(payment.amount)} to ${payment.payee.name}.`,
+        "warning",
+        "alert",
+      );
+    }
+
+    // A caregiver is a different person: voice can never stand in for their approval.
+    if (payment.requiresCaregiver && appState.caregiverStatus !== "approved") {
+      showToast("Caregiver approval is still required.", "danger");
+      speak("This payment needs your caregiver's approval before I can continue.");
+      return;
+    }
+
+    addAudit(
+      source === "click" ? "Confirmation received" : "Confirmation received by voice",
+      source === "click"
+        ? `User said yes to ${formatCurrency(payment.amount)} for ${payment.payee.name}. Moving to Voice PIN authorization${payment.handsFreeEligible ? " (inside mandate limit)" : " (caregiver assisted)"}.`
+        : `User said “${heard}” to confirm ${formatCurrency(payment.amount)} for ${payment.payee.name}. Moving to Voice PIN authorization${payment.handsFreeEligible ? " (inside mandate limit)" : " (caregiver assisted)"}.`,
+      "safe",
+      source === "click" ? "check" : "mic",
+    );
+    enterVoicePin(payment);
+  };
+
+  /**
+   * Abandons the payment when the user refuses at the confirmation step.
+   * "exit", "no transfer", "cancel" and "nahi bhejna" all land here. Nothing is charged.
+   */
+  const cancelByVoice = (payment, transcript = "") => {
+    if (!payment) return;
+    const heard = String(transcript).slice(0, 40);
+    if (payment.isCollect) {
+      declineCollect(payment);
+      return;
+    }
+    if (appState.recognition && appState.listening) {
+      try { appState.recognition.stop(); } catch (error) { /* no-op */ }
+      appState.listening = false;
+    }
+    addAudit(
+      "Payment cancelled by voice",
+      `User said “${heard}” at the confirmation step, so ${formatCurrency(payment.amount)} to ${payment.payee.name} was abandoned before any authorization challenge and before any mandate charge.`,
+      "safe",
+      "shield",
+    );
+    resetPaymentFlow();
+    showToast("Cancelled by voice · nothing moved");
+    speak(`Cancelled. ${formatCurrency(payment.amount)} to ${payment.payee.name} was not paid. Nothing left your account.`);
+  };
+
   const bindReviewActions = (payment) => {
     const confirmButton = byId("confirmPayment");
     const declineButton = byId("declineButton");
@@ -875,24 +970,7 @@
     const editButton = byId("editReview");
 
     confirmButton?.addEventListener("click", () => {
-      if (payment.riskAcknowledgement && !appState.riskAcknowledged) {
-        showToast("Please acknowledge the spoken warning first.", "danger");
-        speak("Please acknowledge the warning after you verify the details.");
-        return;
-      }
-      if (payment.requiresCaregiver && appState.caregiverStatus !== "approved") {
-        showToast("Caregiver approval is still required.", "danger");
-        speak("This payment needs your caregiver's approval before the Voice PIN step.");
-        return;
-      }
-      // Confirmation alone never moves money: it only unlocks the Voice PIN challenge.
-      addAudit(
-        "Confirmation received",
-        `User said yes to ${formatCurrency(payment.amount)} for ${payment.payee.name}. Moving to Voice PIN authorization${payment.handsFreeEligible ? " (inside mandate limit)" : " (caregiver assisted)"}.`,
-        "safe",
-        "check",
-      );
-      enterVoicePin(payment);
+      proceedFromReview(payment, "click");
     });
 
     declineButton?.addEventListener("click", () => declineCollect(payment));
@@ -1001,6 +1079,31 @@
     if (parsed.matched) return { kind: "digits", ...parsed };
     if (PIN_HELP_PATTERN.test(text)) return { kind: "help", digits: "", matched: false, heard: parsed.heard, viaShortcut: false };
     return { kind: "partial", ...parsed };
+  };
+
+  /**
+   * Confirmation vocabulary for the review step.
+   *
+   * The agent says "say yes to confirm or no to cancel", so speech has to be honoured
+   * here instead of falling through and being re-parsed as a brand-new payment command.
+   * Cancel is tested first on purpose: "no", "mat bhejo" and "exit" must never read as a
+   * yes, and a refusal beats an approval in the same breath ("no, don't transfer").
+   */
+  const CONFIRM_CANCEL_PATTERN =
+    /\b(no|nope|nah|nahi|nahin|cancel|cancle|cancelled|exit|quit|stop|abort|band|bandh|chhod|chhodo|chodo|rehne|skip|decline|reject|mat|dont|don'?t|do\s+not|leave\s+it|forget\s+it|never\s+mind|not\s+now)\b/i;
+  const CONFIRM_APPROVE_PATTERN =
+    /\b(yes|yep|yeah|yup|haan|han|ji|confirm|confirmed|ok|okay|theek|thik|sahi|bhej|bhejo|approve|proceed|go\s+ahead|send\s+it|pay\s+it|do\s+it|kar\s+do|karo|sure|pakka|zaroor|done|continue|haan\s+ji)\b/i;
+
+  /**
+   * Classifies what the user said at the confirmation step.
+   * Returns { kind: "approve" | "cancel" | "unknown" | "empty", heard }.
+   */
+  const detectConfirmIntent = (transcript) => {
+    const text = String(transcript || "").trim();
+    if (!text) return { kind: "empty", heard: "" };
+    if (CONFIRM_CANCEL_PATTERN.test(text)) return { kind: "cancel", heard: text };
+    if (CONFIRM_APPROVE_PATTERN.test(text)) return { kind: "approve", heard: text };
+    return { kind: "unknown", heard: text };
   };
 
   const PIN_FILLER_WORDS = new Set([
@@ -1671,6 +1774,39 @@
       handlePinTranscript(raw, appState.pending, true);
       return;
     }
+    // At the confirmation step, speech answers the yes/no question. Previously any
+    // utterance here fell through to the bottom of this function, which reset
+    // appState.pending and re-parsed it as a brand-new payment command — so saying the
+    // "yes" the button asked for destroyed the payment and asked for a payee again.
+    if (!demoType && ["review", "guard"].includes(appState.status) && appState.pending && !mentionsPaymentDetail(raw)) {
+      if (appState.listening && appState.recognition) {
+        try { appState.recognition.stop(); } catch (error) { /* no-op */ }
+        appState.listening = false;
+      }
+      setTranscript(raw);
+      const confirmIntent = detectConfirmIntent(raw);
+      if (confirmIntent.kind === "cancel") {
+        addAudit("You said", raw, "safe", "mic");
+        cancelByVoice(appState.pending, raw);
+        return;
+      }
+      if (confirmIntent.kind === "approve") {
+        addAudit("You said", raw, "safe", "mic");
+        proceedFromReview(appState.pending, "voice", raw);
+        return;
+      }
+      // Neither a yes nor a refusal: keep the payment open and repeat the question
+      // instead of throwing away the safety work the agent already did.
+      addAudit(
+        "Confirmation not understood",
+        `Heard “${raw.slice(0, 40)}” at the confirmation step, which is neither a yes nor a cancel. The payment stayed open and the question was repeated.`,
+        "warning",
+        "help",
+      );
+      showToast("Say yes to confirm, or exit to cancel");
+      speak(buildSpokenSummary(appState.pending));
+      return;
+    }
     const clarificationBase = appState.awaitingClarification && appState.pending?.needsClarification ? appState.pending.raw : "";
     const effectiveRaw = clarificationBase ? `${clarificationBase} ${raw}` : raw;
     if (appState.listening && appState.recognition) {
@@ -1754,7 +1890,7 @@
     if (payment.flags.includes("amount") || payment.flags.includes("amount-elevated")) {
       return `Pause. You are about to pay ${formatCurrency(payment.amount)}, ${payment.amountWords} rupees, to ${payment.payee.name} at ${payment.payee.vpa}. That is ${payment.amountMultiplier} times your usual amount for this payee. Say yes only after you verify it.`;
     }
-    return `You are about to pay ${formatCurrency(payment.amount)}, ${payment.amountWords} rupees, to ${payment.payee.name} at ${payment.payee.vpa}. This is inside your caregiver mandate, so after your yes I will ask for your Voice PIN and then pay without any screen. Say yes to confirm or no to cancel.`;
+    return `You are about to pay ${formatCurrency(payment.amount)}, ${payment.amountWords} rupees, to ${payment.payee.name} at ${payment.payee.vpa}. This is inside your caregiver mandate, so after your yes I will ask for your Voice PIN and then pay without any screen. Say yes to confirm, or say exit to cancel.`;
   };
 
   const resetPaymentFlow = () => {

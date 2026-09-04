@@ -36,7 +36,7 @@ const buildEngine = ({ smartDemoMode = true, demoVoicePin = '1234' } = {}) => {
   };
   vm.createContext(sandbox);
   vm.runInContext(
-    `${pinEngineSource}\nthis.extractPinDigits = extractPinDigits;\nthis.detectPinIntent = detectPinIntent;`,
+    `${pinEngineSource}\nthis.extractPinDigits = extractPinDigits;\nthis.detectPinIntent = detectPinIntent;\nthis.detectConfirmIntent = detectConfirmIntent;`,
     sandbox,
   );
   return sandbox;
@@ -156,4 +156,56 @@ test('partial and empty speech are neither cancel nor digits', () => {
   assert.equal(detectPinIntent('one two').heard, 2);
   assert.equal(detectPinIntent('').kind, 'empty');
   assert.equal(detectPinIntent('hmm').kind, 'partial');
+});
+
+// --- Confirmation-step vocabulary -------------------------------------------
+// The review step asks "say yes to confirm, or say exit to cancel". These tests pin
+// down the classifier that replaced a click, including the refusal-beats-approval rule.
+
+test('a spoken yes is classified as approval in English and Hindi', () => {
+  const { detectConfirmIntent } = buildEngine();
+  for (const phrase of ['yes', 'Yes', 'haan', 'haan bhej do', 'ji haan', 'ok', 'okay', 'confirm',
+    'theek hai', 'sahi hai', 'bhej do', 'go ahead', 'proceed', 'pay it', 'do it', 'sure', 'pakka']) {
+    assert.equal(detectConfirmIntent(phrase).kind, 'approve', `"${phrase}" should approve`);
+  }
+});
+
+test('a spoken refusal is classified as cancel, including the exit vocabulary', () => {
+  const { detectConfirmIntent } = buildEngine();
+  for (const phrase of ['no', 'exit', 'exit no transfer', 'no transfer', 'cancel', 'cancel it',
+    'nahi', 'nahi bhejna', 'mat bhejo', 'band karo', 'stop', 'abort', 'quit', 'decline',
+    'chhod do', 'rehne do', "don't transfer", 'do not pay', 'forget it', 'never mind', 'skip']) {
+    assert.equal(detectConfirmIntent(phrase).kind, 'cancel', `"${phrase}" should cancel`);
+  }
+});
+
+test('a refusal beats an approval in the same breath', () => {
+  const { detectConfirmIntent } = buildEngine();
+  assert.equal(detectConfirmIntent('no don\'t transfer').kind, 'cancel');
+  assert.equal(detectConfirmIntent('ji nahi').kind, 'cancel');
+  assert.equal(detectConfirmIntent('no no yes stop').kind, 'cancel');
+  assert.equal(detectConfirmIntent('mat bhejo cancel karo').kind, 'cancel');
+});
+
+test('"no" is never read as approval and "yes" is never read as refusal', () => {
+  const { detectConfirmIntent } = buildEngine();
+  assert.notEqual(detectConfirmIntent('no').kind, 'approve');
+  assert.notEqual(detectConfirmIntent('yes').kind, 'cancel');
+  assert.equal(detectConfirmIntent('yes').heard, 'yes');
+});
+
+test('unrelated speech and silence are neither approve nor cancel', () => {
+  const { detectConfirmIntent } = buildEngine();
+  assert.equal(detectConfirmIntent('hello there').kind, 'unknown');
+  assert.equal(detectConfirmIntent('what is my balance').kind, 'unknown');
+  assert.equal(detectConfirmIntent('').kind, 'empty');
+  assert.equal(detectConfirmIntent('   ').kind, 'empty');
+});
+
+test('words that merely contain yes/no are not misread', () => {
+  const { detectConfirmIntent } = buildEngine();
+  // "yesterday", "known", "notice" and "cancelation" must not trigger on substrings.
+  assert.equal(detectConfirmIntent('yesterday I paid').kind, 'unknown');
+  assert.equal(detectConfirmIntent('I have known him').kind, 'unknown');
+  assert.equal(detectConfirmIntent('send a notice').kind, 'unknown');
 });

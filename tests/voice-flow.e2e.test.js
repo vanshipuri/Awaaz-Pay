@@ -105,6 +105,18 @@ const click = (document, selector) => {
 
 const text = (document, selector) => document.querySelector(selector)?.textContent || '';
 
+/**
+ * Drives the typed fallback, which is the same path a spoken command takes into
+ * handleCommand once speech recognition hands over a final transcript.
+ */
+const say = (document, value) => {
+  const form = document.getElementById('typedCommandForm');
+  form.classList.remove('hidden');
+  const input = document.getElementById('commandInput');
+  input.value = value;
+  form.dispatchEvent(new document.defaultView.Event('submit', { bubbles: true, cancelable: true }));
+};
+
 test('the console boots into Smart Demo Mode with the mandate loaded', async (t) => {
   if (skipReason) return t.skip(skipReason);
   const { document } = await bootConsole();
@@ -342,4 +354,90 @@ test('the pitch phrase for Scenario 2 warns instead of asking for a payee', asyn
     !/CLARIFICATION NEEDED/.test(text(document, '#reviewContent')),
     'a pull request must never be answered with "who should I pay?"',
   );
+});
+
+// --- Spoken confirmation ------------------------------------------------------
+// The review step's button says "Say YES", so saying yes has to work. These tests cover
+// the regression where any speech at that step was re-parsed as a brand-new payment
+// command, which discarded the pending intent and asked for a payee all over again.
+
+test('a spoken "yes" confirms the payment instead of destroying it', async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { document } = await bootConsole();
+
+  say(document, 'Sharma kirana ko paanch sau rupaye bhejo');
+  await waitFor(() => document.querySelector('#confirmPayment'), { label: 'the confirmation button' });
+
+  say(document, 'yes');
+  await waitFor(
+    () => document.getElementById('pinBadge') && !document.getElementById('pinBadge').classList.contains('hidden'),
+    { label: 'the blue WAITING FOR VOICE PIN badge' },
+  );
+  assert.ok(document.getElementById('pinInput'), 'the spoken yes must open the Voice PIN challenge');
+  assert.match(document.getElementById('pinBadgeText').textContent, /WAITING FOR VOICE PIN/);
+  assert.match(document.getElementById('agentStatus').className, /authenticate/);
+  assert.ok(
+    !/CLARIFICATION NEEDED/.test(text(document, '#reviewContent')),
+    'a yes must never be re-parsed as a new payment command',
+  );
+  assert.match(text(document, '#logEntries'), /Confirmation received by voice/);
+});
+
+test('a spoken Hindi "haan bhej do" also confirms', async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { document } = await bootConsole();
+
+  say(document, 'Sharma kirana ko paanch sau rupaye bhejo');
+  await waitFor(() => document.querySelector('#confirmPayment'), { label: 'the confirmation button' });
+
+  say(document, 'haan bhej do');
+  await waitFor(() => document.getElementById('pinInput'), { label: 'the Voice PIN panel' });
+  assert.match(document.getElementById('agentStatus').className, /authenticate/);
+});
+
+test('a spoken "exit no transfer" abandons the payment and charges nothing', async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { document } = await bootConsole();
+  const rupees = () => Number(text(document, '#balanceDisplay').replace(/[^0-9]/g, ''));
+
+  say(document, 'Sharma kirana ko paanch sau rupaye bhejo');
+  await waitFor(() => document.querySelector('#confirmPayment'), { label: 'the confirmation button' });
+  const balanceBefore = rupees();
+
+  say(document, 'exit no transfer');
+  await waitFor(() => document.getElementById('agentStatus').className.includes('ready'), { label: 'the idle state' });
+
+  assert.ok(!document.querySelector('#confirmPayment'), 'the confirmation button should be gone');
+  assert.ok(!document.getElementById('reviewEmpty').classList.contains('hidden'), 'the review panel should be cleared');
+  assert.ok(document.getElementById('pinBadge').classList.contains('hidden'), 'no PIN challenge should be open');
+  assert.equal(rupees(), balanceBefore, 'nothing may be charged after a spoken refusal');
+  assert.match(text(document, '#logEntries'), /cancelled by voice/i);
+});
+
+test('unrelated speech keeps the payment open instead of restarting it', async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { document } = await bootConsole();
+
+  say(document, 'Sharma kirana ko paanch sau rupaye bhejo');
+  await waitFor(() => document.querySelector('#confirmPayment'), { label: 'the confirmation button' });
+
+  say(document, 'hello there');
+  await waitFor(() => /Confirmation not understood/.test(text(document, '#logEntries')), {
+    label: 'the not-understood audit entry',
+  });
+  assert.ok(document.querySelector('#confirmPayment'), 'the pending payment must survive unrelated speech');
+  assert.ok(!/CLARIFICATION NEEDED/.test(text(document, '#reviewContent')));
+});
+
+test('a new payment command spoken mid-review still changes the payment', async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { document } = await bootConsole();
+
+  say(document, 'Sharma kirana ko paanch sau rupaye bhejo');
+  await waitFor(() => document.querySelector('#confirmPayment'), { label: 'the confirmation button' });
+
+  // Names a payee and an amount, so this is a change of intent, not an answer.
+  say(document, 'Rakesh Medical ko do hazaar rupaye do');
+  await waitFor(() => /Rakesh Medical/.test(text(document, '#reviewContent')), { label: 'the new payee' });
+  assert.match(text(document, '#reviewContent'), /₹2,000/);
 });
