@@ -50,6 +50,28 @@
     walletBalance: byId("walletBalance"),
     logEntries: byId("logEntries"),
     logCount: byId("logCount"),
+    profileAvatar: byId("profileAvatar"),
+    profileName: byId("profileName"),
+    payeeList: byId("payeeList"),
+    payeesCount: byId("payeesCount"),
+    mandateBounds: byId("mandateBounds"),
+    boundsPayeeCount: byId("boundsPayeeCount"),
+    mandateBannerCaregiver: byId("mandateBannerCaregiver"),
+    mandateBannerElder: byId("mandateBannerElder"),
+    caregiverProfileForm: byId("caregiverProfileForm"),
+    elderNameInput: byId("elderNameInput"),
+    elderContactInput: byId("elderContactInput"),
+    caregiverNameInput: byId("caregiverNameInput"),
+    caregiverRelationshipInput: byId("caregiverRelationshipInput"),
+    caregiverPhoneInput: byId("caregiverPhoneInput"),
+    perTxnLimitInput: byId("perTxnLimitInput"),
+    dailyLimitInput: byId("dailyLimitInput"),
+    voicePinSetInput: byId("voicePinSetInput"),
+    profileSaveNote: byId("profileSaveNote"),
+    payeeAddForm: byId("payeeAddForm"),
+    newPayeeName: byId("newPayeeName"),
+    newPayeeVpa: byId("newPayeeVpa"),
+    newPayeeUsual: byId("newPayeeUsual"),
   };
 
   /**
@@ -119,7 +141,8 @@
     dailyLimit: 15000,
     usedToday: 0,
     remainingToday: 15000,
-    caregiver: { name: "Meera Sharma", relationship: "Daughter" },
+    caregiver: { name: "Meera Sharma", relationship: "Daughter", phone: "+91 98200 11223" },
+    elder: { name: "Sarla Devi", handle: "SD", contact: "919812300000" },
     wallet: { id: "acc_LOCALDEMO01", label: "AwaazPay closed-loop wallet", balance: 12500, currency: "INR" },
     authorizedPayees: [],
     handsFree: true,
@@ -238,6 +261,13 @@
       verifying: false,
       awaitingSpokenPin: false,
     },
+    // True while the microphone is open for a spoken YES/NO at the confirmation step,
+    // or for the missing detail at the clarification step. This keeps the whole loop
+    // hands-free: after the agent speaks the summary, it immediately listens.
+    awaitingConfirmation: false,
+    // Set when the user explicitly stops the mic, so the auto-reopen loop does not
+    // start listening again on the recognition "end" event.
+    userStoppedMic: false,
     // Which challenge the blue indicator is showing: a biometric factor or the Voice PIN.
     authChallenge: "pin",
     biometrics: {
@@ -377,21 +407,24 @@
   };
 
   const updateAgentSteps = (status) => {
+    // The eight-step agentic loop:
+    // 0 understand · 1 clarify · 2 resolve/check · 3 confirm aloud · 4 guard ·
+    // 5 Voice PIN · 6 execute & verify · 7 audit
     const progress = {
       ready: { active: 0, done: -1 },
       listening: { active: 0, done: -1 },
-      analyzing: { active: 1, done: 0 },
+      analyzing: { active: 2, done: 0 },
       clarify: { active: 1, done: 0 },
-      review: { active: 2, done: 1 },
-      guard: { active: 3, done: 2 },
-      authenticate: { active: 4, done: 3 },
-      pinLocked: { active: 4, done: 3 },
-      processing: { active: 5, done: 4 },
-      success: { active: -1, done: 5 },
-      blocked: { active: 3, done: 2 },
+      review: { active: 3, done: 2 },
+      guard: { active: 4, done: 3 },
+      authenticate: { active: 5, done: 4 },
+      pinLocked: { active: 5, done: 4 },
+      processing: { active: 6, done: 5 },
+      success: { active: 7, done: 6 },
+      blocked: { active: 4, done: 3 },
     }[status] || { active: 0, done: -1 };
 
-    const stepNames = ["understand", "check", "confirm", "guard", "authenticate", "execute"];
+    const stepNames = ["understand", "clarify", "check", "confirm", "guard", "authenticate", "execute", "audit"];
     $$(".agent-step", dom.stepList).forEach((step, index) => {
       const stateLabel = $(".step-state", step);
       step.classList.remove("active", "done", "guard-active", "pin-active");
@@ -706,6 +739,52 @@
     if (caregiver) caregiver.textContent = mandate.caregiver?.name ? `${mandate.caregiver.name} · ${mandate.caregiver.relationship || "Caregiver"}` : "—";
   };
 
+  const AVATAR_COLORS = ["yellow", "purple", "blue", "green", "pink", "teal"];
+
+  const initials = (name) =>
+    String(name || "")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0] || "")
+      .join("")
+      .toUpperCase() || "AP";
+
+  /** Reflects the caregiver-created profile across the console (sidebar avatar, mandate card). */
+  const renderIdentity = () => {
+    const mandate = appState.mandate || {};
+    const elderName = mandate.elder?.name || "Account holder";
+    const elderHandle = mandate.elder?.handle || initials(elderName);
+    if (dom.profileAvatar) dom.profileAvatar.textContent = elderHandle;
+    if (dom.profileName) dom.profileName.textContent = elderName;
+    if (dom.mandateBannerElder) dom.mandateBannerElder.textContent = elderName;
+    const caregiverName = mandate.caregiver?.name || "the caregiver";
+    if (dom.mandateBannerCaregiver) {
+      dom.mandateBannerCaregiver.textContent = `${caregiverName}${mandate.caregiver?.relationship ? ` (${mandate.caregiver.relationship})` : ""}`;
+    }
+  };
+
+  /** Renders the caregiver-authorized payee allowlist (from the server, then from edits). */
+  const renderPayees = () => {
+    if (!dom.payeeList) return;
+    const payees = appState.mandate?.authorizedPayees || [];
+    dom.payeeList.innerHTML = payees
+      .map((payee, index) => {
+        const color = AVATAR_COLORS[index % AVATAR_COLORS.length];
+        const usual = payee.usualAmountRupees;
+        return `
+          <div class="payee-row">
+            <div class="payee-avatar ${color}">${escapeHTML(initials(payee.name))}</div>
+            <div class="payee-copy"><strong>${escapeHTML(payee.name)}</strong><span>${escapeHTML(payee.vpa)}</span></div>
+            <div class="payee-usual"><span>${usual ? "usual" : "added"}</span><strong>${usual ? formatCurrency(usual) : "—"}</strong></div>
+          </div>`;
+      })
+      .join("");
+    if (dom.payeesCount) dom.payeesCount.textContent = `${payees.length} trusted payee${payees.length === 1 ? "" : "s"}`;
+    if (dom.boundsPayeeCount) dom.boundsPayeeCount.textContent = String(payees.length);
+  };
+
   const loadMandate = async () => {
     try {
       const response = await fetch("/api/mandate", { cache: "no-store" });
@@ -722,6 +801,8 @@
       appState.serverAvailable = false;
     }
     renderMandateCard();
+    renderIdentity();
+    renderPayees();
   };
 
   const showReviewLoading = () => {
@@ -776,16 +857,18 @@
   const caregiverApprovalHTML = (payment) => {
     if (!payment.requiresCaregiver) return "";
     const status = appState.caregiverStatus;
+    const caregiverName = appState.mandate?.caregiver?.name || "your caregiver";
+    const relationship = appState.mandate?.caregiver?.relationship || "";
     if (!appState.riskAcknowledged) {
       return `<div class="caregiver-approval"><span class="caregiver-approval-icon"><svg><use href="#icon-users"></use></svg></span><span class="caregiver-approval-copy"><strong>Caregiver approval required</strong><small>Needed above ₹${formatNumber(appState.mandate.perTransactionLimit)} (outside the hands-free mandate) or for a new payee.</small></span><button class="caregiver-action" type="button" disabled>After warning</button></div>`;
     }
     if (status === "pending") {
-      return `<div class="caregiver-approval pending"><span class="caregiver-approval-icon"><svg><use href="#icon-clock"></use></svg></span><span class="caregiver-approval-copy"><strong>Waiting for Meera Sharma</strong><small>Approval request sent. The demo will simulate her response.</small></span><button class="caregiver-action" type="button" disabled>Waiting…</button></div>`;
+      return `<div class="caregiver-approval pending"><span class="caregiver-approval-icon"><svg><use href="#icon-clock"></use></svg></span><span class="caregiver-approval-copy"><strong>Waiting for ${escapeHTML(caregiverName)}</strong><small>Approval request sent${relationship ? ` to ${escapeHTML(relationship).toLowerCase()}` : ""}. The demo will simulate the response.</small></span><button class="caregiver-action" type="button" disabled>Waiting…</button></div>`;
     }
     if (status === "approved") {
-      return `<div class="caregiver-approval approved"><span class="caregiver-approval-icon"><svg><use href="#icon-check"></use></svg></span><span class="caregiver-approval-copy"><strong>Approved by Meera Sharma</strong><small>Approval recorded in the caregiver log.</small></span><span class="verified-label">approved</span></div>`;
+      return `<div class="caregiver-approval approved"><span class="caregiver-approval-icon"><svg><use href="#icon-check"></use></svg></span><span class="caregiver-approval-copy"><strong>Approved by ${escapeHTML(caregiverName)}</strong><small>Approval recorded in the caregiver log.</small></span><span class="verified-label">approved</span></div>`;
     }
-    return `<div class="caregiver-approval"><span class="caregiver-approval-icon"><svg><use href="#icon-users"></use></svg></span><span class="caregiver-approval-copy"><strong>Caregiver approval required</strong><small>Ask Meera Sharma to approve this high-risk payment before continuing.</small></span><button class="caregiver-action" id="requestCaregiver" type="button">Ask caregiver</button></div>`;
+    return `<div class="caregiver-approval"><span class="caregiver-approval-icon"><svg><use href="#icon-users"></use></svg></span><span class="caregiver-approval-copy"><strong>Caregiver approval required</strong><small>Ask ${escapeHTML(caregiverName)}${relationship ? ` (${escapeHTML(relationship)})` : ""} to approve this high-risk payment before continuing.</small></span><button class="caregiver-action" id="requestCaregiver" type="button">Ask caregiver</button></div>`;
   };
 
   const renderReview = (payment) => {
@@ -862,8 +945,10 @@
         </div>`;
     } else {
       extraAction = `
+        <div class="voice-answer-hint"><span class="voice-answer-pulse"><svg><use href="#icon-mic"></use></svg></span><span>I am listening — say <strong>“yes”</strong> to confirm or <strong>“no”</strong> to cancel</span></div>
         <div class="review-actions">
           <button class="primary-button" id="confirmPayment" type="button"><svg><use href="#icon-check"></use></svg>Say YES · confirm payment</button>
+          <button class="cancel-action" id="cancelReviewSafe" type="button">Say NO · cancel</button>
           <button class="secondary-button" id="editReview" type="button">Change details</button>
         </div>`;
     }
@@ -918,8 +1003,11 @@
     // "yes" here must be refused rather than honored.
     if (payment.isCollect) {
       addAudit("Confirmation refused", `User said “${heard}” but ${formatCurrency(payment.amount)} is a collect request, which pulls money out and is never charged on the mandate.`, "danger", "shield");
-      showToast("A collect request cannot be paid hands-free", "danger");
-      speak("I cannot pay a collect request. It takes money out of your account, and my mandate never covers that. Say no to decline it.");
+      showToast("A collect request cannot be paid hands-free · say no to decline", "danger");
+      speakThenListenForAnswer(
+        payment,
+        "I cannot pay a collect request. It takes money out of your account, and my mandate never covers that. Say no to decline it.",
+      );
       return;
     }
 
@@ -966,6 +1054,7 @@
   const cancelByVoice = (payment, transcript = "") => {
     if (!payment) return;
     const heard = String(transcript).slice(0, 40);
+    appState.awaitingConfirmation = false;
     if (payment.isCollect) {
       declineCollect(payment);
       return;
@@ -998,6 +1087,10 @@
       proceedFromReview(payment, "click");
     });
 
+    byId("cancelReviewSafe")?.addEventListener("click", () => {
+      cancelByVoice(payment, "no (button)");
+    });
+
     declineButton?.addEventListener("click", () => declineCollect(payment));
 
     expectButton?.addEventListener("click", () => {
@@ -1010,11 +1103,12 @@
 
     requestCaregiverButton?.addEventListener("click", () => {
       if (!payment.requiresCaregiver || !appState.riskAcknowledged) return;
+      const caregiverName = appState.mandate?.caregiver?.name || "your caregiver";
       appState.caregiverStatus = "pending";
-      addAudit("Caregiver approval requested", `Asked Meera Sharma to approve ${formatCurrency(payment.amount)} for ${payment.payee.name}.`, "warning", "users");
+      addAudit("Caregiver approval requested", `Asked ${caregiverName} to approve ${formatCurrency(payment.amount)} for ${payment.payee.name}.`, "warning", "users");
       renderReview(payment);
       setState("guard");
-      speak("Approval request sent to Meera Sharma. I will wait before allowing this high-risk payment.");
+      speak(`Approval request sent to ${caregiverName}. I will wait before allowing this high-risk payment.`);
       window.clearTimeout(appState.caregiverTimer);
       appState.caregiverTimer = window.setTimeout(async () => {
         if (appState.pending?.intentId !== payment.intentId || appState.caregiverStatus !== "pending") return;
@@ -1024,14 +1118,15 @@
         appState.caregiverApprovalId = approvalId;
         addAudit(
           "Caregiver approved",
-          `Meera Sharma approved the high-risk payment after reviewing the request${approvalId ? ` · approval ${approvalId} recorded on the server` : " (simulated locally)"}.`,
+          `${caregiverName} approved the high-risk payment after reviewing the request${approvalId ? ` · approval ${approvalId} recorded on the server` : " (simulated locally)"}.`,
           "safe",
           "users",
         );
         renderReview(payment);
         setState("guard");
-        speak("Meera Sharma approved this request. You still need to say yes, then your Voice PIN, before the payment can be sent.");
         showToast("Caregiver approval received");
+        // Back to the spoken yes/no gate — the answer must still come from the user.
+        speakThenListenForAnswer(payment, `${caregiverName} approved this request. Say yes to continue, then your Voice PIN. Or say no to cancel.`);
       }, 1400);
     });
 
@@ -1321,6 +1416,45 @@
         startPinListening(payment);
       }
     });
+  };
+
+  /**
+   * Speaks the confirmation/clarification prompt, then opens the microphone so the user
+   * can answer YES or NO completely hands-free — the same speak-then-listen sequencing
+   * the Voice PIN step uses. If the mic is unavailable (no SpeechRecognition), this is a
+   * no-op and the on-screen buttons remain the fallback.
+   */
+  const speakThenListenForAnswer = (payment, text) => {
+    speak(text, () => {
+      if (["review", "guard", "clarify"].includes(appState.status) && payment && appState.pending === payment) {
+        startConfirmationListening();
+      }
+    });
+  };
+
+  const startConfirmationListening = () => {
+    if (!appState.recognition) return; // no microphone: buttons + typing remain the fallback
+    appState.awaitingConfirmation = true;
+    appState.userStoppedMic = false;
+    if (appState.listening) {
+      try { appState.recognition.stop(); } catch (error) { /* no-op */ }
+      appState.listening = false;
+    }
+    try {
+      appState.recognition.lang = dom.languageSelect?.value || "en-IN";
+      appState.recognition.start();
+    } catch (error) {
+      appState.awaitingConfirmation = false;
+    }
+  };
+
+  const stopConfirmationListening = () => {
+    appState.awaitingConfirmation = false;
+    if (appState.listening && appState.recognition) {
+      appState.userStoppedMic = true;
+      try { appState.recognition.stop(); } catch (error) { /* no-op */ }
+      appState.listening = false;
+    }
   };
 
   const startPinListening = (payment) => {
@@ -2274,6 +2408,7 @@
   };
 
   const declineCollect = (payment) => {
+    appState.awaitingConfirmation = false;
     appState.metrics.scamsBlocked += 1;
     updateMetrics();
     addAudit("Collect request declined", `${formatCurrency(payment.amount)} request declined. Nothing left the account.`, "danger", "shield");
@@ -2357,6 +2492,7 @@
     // appState.pending and re-parsed it as a brand-new payment command — so saying the
     // "yes" the button asked for destroyed the payment and asked for a payee again.
     if (!demoType && ["review", "guard"].includes(appState.status) && appState.pending && !mentionsPaymentDetail(raw)) {
+      appState.awaitingConfirmation = false;
       if (appState.listening && appState.recognition) {
         try { appState.recognition.stop(); } catch (error) { /* no-op */ }
         appState.listening = false;
@@ -2374,15 +2510,16 @@
         return;
       }
       // Neither a yes nor a refusal: keep the payment open and repeat the question
-      // instead of throwing away the safety work the agent already did.
+      // instead of throwing away the safety work the agent already did. The mic
+      // re-opens afterwards, so the user never has to tap.
       addAudit(
         "Confirmation not understood",
         `Heard “${raw.slice(0, 40)}” at the confirmation step, which is neither a yes nor a cancel. The payment stayed open and the question was repeated.`,
         "warning",
         "help",
       );
-      showToast("Say yes to confirm, or exit to cancel");
-      speak(buildSpokenSummary(appState.pending));
+      showToast("Say yes to confirm, or no to cancel");
+      speakThenListenForAnswer(appState.pending, `I did not catch a yes or a no. ${buildSpokenSummary(appState.pending)}`);
       return;
     }
     const clarificationBase = appState.awaitingClarification && appState.pending?.needsClarification ? appState.pending.raw : "";
@@ -2420,12 +2557,13 @@
       if (parsed.needsClarification) {
         appState.awaitingClarification = true;
         const missingLabel = parsed.missingFields.join(" and ");
-        addAudit("Clarification needed", `The agent asked for the missing ${missingLabel} instead of guessing.`, "warning", "help");
-        renderClarification(parsed);
-        setState("clarify");
-        speak(buildClarificationPrompt(parsed));
-        return;
-      }
+      addAudit("Clarification needed", `The agent asked for the missing ${missingLabel} instead of guessing.`, "warning", "help");
+      renderClarification(parsed);
+      setState("clarify");
+      // Hands-free: listen straight away for the spoken answer (amount or payee).
+      speakThenListenForAnswer(parsed, buildClarificationPrompt(parsed));
+      return;
+    }
       appState.metrics.commandsParsed += 1;
       updateMetrics();
       const intentTrace = groqIntent
@@ -2444,7 +2582,8 @@
       addAudit("Agent safety check", riskDetail, parsed.riskLevel === "low" ? "safe" : parsed.isCollect ? "danger" : "warning", parsed.isCollect ? "alert" : parsed.riskLevel === "low" ? "shield" : "alert");
       renderReview(parsed);
       setState(parsed.riskLevel === "low" ? "review" : "guard");
-      speak(buildSpokenSummary(parsed));
+      // Hands-free confirmation: the agent speaks the truth, then listens for YES or NO.
+      speakThenListenForAnswer(parsed, buildSpokenSummary(parsed));
     }, 780);
   };
 
@@ -2484,6 +2623,8 @@
     appState.caregiverApprovalId = null;
     appState.awaitingClarification = false;
     appState.voicePin = { digits: "", attempts: 0, locked: false, lockedUntil: 0, verifying: false, awaitingSpokenPin: false };
+    appState.awaitingConfirmation = false;
+    appState.userStoppedMic = false;
     appState.authChallenge = "pin";
     appState.biometrics.verifying = false;
     if (appState.listening && appState.recognition) {
@@ -2518,9 +2659,17 @@
     recognition.maxAlternatives = 1;
     recognition.onstart = () => {
       appState.listening = true;
-      // During the Voice PIN challenge the stage stays in the authenticate state.
-      if (appState.status !== "authenticate") setState("listening");
-      setTranscript(appState.status === "authenticate" ? "Listening for your Voice PIN…" : "Listening…");
+      appState.userStoppedMic = false;
+      const capturingPin = appState.status === "authenticate" && appState.voicePin.awaitingSpokenPin;
+      const capturingAnswer = appState.awaitingConfirmation && ["review", "guard", "clarify"].includes(appState.status);
+      // During a challenge (Voice PIN, spoken yes/no, clarification) the stage keeps its
+      // state; only the free-listen idle moment flips to the "listening" visuals.
+      if (!capturingPin && !capturingAnswer) setState("listening");
+      setTranscript(
+        capturingPin ? "Listening for your Voice PIN…"
+          : capturingAnswer ? (appState.status === "clarify" ? "Listening for the missing detail…" : "Listening — say YES to confirm or NO to cancel…")
+            : "Listening…",
+      );
     };
     recognition.onresult = (event) => {
       let interim = "";
@@ -2553,6 +2702,22 @@
         byId("pinInput")?.focus();
         return;
       }
+      if (appState.awaitingConfirmation && ["review", "guard", "clarify"].includes(appState.status)) {
+        // The yes/no answer loop must survive a dropped mic, but a user-stop or a
+        // permission denial must not start a frantic reopen loop.
+        if (event.error === "not-allowed") {
+          appState.awaitingConfirmation = false;
+          showToast("Microphone permission is off. Use the buttons or type to answer.", "danger");
+          return;
+        }
+        appState.awaitingConfirmation = false;
+        if (event.error !== "aborted" && !appState.userStoppedMic) {
+          window.setTimeout(() => {
+            if (["review", "guard", "clarify"].includes(appState.status) && appState.pending) startConfirmationListening();
+          }, 1100);
+        }
+        return;
+      }
       setState("ready");
       const message = event.error === "not-allowed" ? "Microphone permission is off. You can type the command instead." : "I could not hear that. Try again or type a command.";
       showToast(message, event.error === "not-allowed" ? "danger" : "safe");
@@ -2569,6 +2734,16 @@
         }
         return;
       }
+      if (appState.awaitingConfirmation && ["review", "guard", "clarify"].includes(appState.status)) {
+        appState.listening = false;
+        if (appState.userStoppedMic) return;
+        // Silence at the confirmation step: re-open the mic so a quiet "yes" is still caught.
+        appState.awaitingConfirmation = false;
+        window.setTimeout(() => {
+          if (["review", "guard", "clarify"].includes(appState.status) && appState.pending) startConfirmationListening();
+        }, 1000);
+        return;
+      }
       if (appState.listening) {
         appState.listening = false;
         setState("ready");
@@ -2581,6 +2756,17 @@
     if (["analyzing", "processing"].includes(appState.status)) return;
     if (appState.status === "authenticate") {
       startPinListening(appState.pending);
+      return;
+    }
+    if (["review", "guard", "clarify"].includes(appState.status) && appState.pending) {
+      if (appState.awaitingConfirmation) {
+        stopConfirmationListening();
+        setState(appState.status); // keep the same step; mic is closed
+        showToast("Microphone closed · say YES or NO, or use the buttons");
+      } else {
+        showToast("Listening — say YES to confirm or NO to cancel");
+        speakThenListenForAnswer(appState.pending, "Say yes to confirm the payment, or say no to cancel.");
+      }
       return;
     }
     if (!appState.recognition) {
@@ -2662,24 +2848,35 @@
 
   /* ------------------------------------------------- caregiver mandate setup */
 
-  const mandateSetupSteps = [
-    { title: "Caregiver signs in", detail: "Meera Sharma opens the visual setup screen — the only step that needs eyes on glass." },
-    { title: "Choose trusted payees", detail: "Sharma Kirana, Rakesh Medical, and Mehta Utilities are added to the mandate allowlist." },
-    { title: "Set the daily bounds", detail: `₹${formatNumber(5000)} per transaction and ₹${formatNumber(15000)} per day, matching RBI's UPI AutoPay limits for mandate-based charges.` },
-    { title: "Authenticate once, visually", detail: "The caregiver completes the UPI PIN / bank approval inside the bank's own secure surface." },
-    { title: "Mandate registered", detail: "Razorpay returns a token. From now on AwaazPay charges server-to-server after a Voice PIN — no PIN pad, no OTP." },
-  ];
+  const buildMandateSetupSteps = () => {
+    const caregiverName = appState.mandate?.caregiver?.name || "The caregiver";
+    const payees = (appState.mandate?.authorizedPayees || []).map((payee) => payee.name);
+    const payeeList = payees.length
+      ? payees.slice(0, 4).join(", ") + (payees.length > 4 ? `, and ${payees.length - 4} more` : "")
+      : "the merchants the elder trusts";
+    const perTxn = appState.mandate?.perTransactionLimit || 5000;
+    const daily = appState.mandate?.dailyLimit || 15000;
+    return [
+      { title: "Caregiver signs in", detail: `${caregiverName} opens the visual setup screen — the only step that needs eyes on glass.` },
+      { title: "Choose trusted payees", detail: `${payeeList} are added to the mandate allowlist — the only merchants that can be charged hands-free.` },
+      { title: "Set the daily bounds", detail: `₹${formatNumber(perTxn)} per transaction and ₹${formatNumber(daily)} per day, inside RBI's UPI AutoPay limits for mandate-based charges.` },
+      { title: "Authenticate once, visually", detail: "The caregiver completes the UPI PIN / bank approval inside the bank's own secure surface." },
+      { title: "Mandate registered", detail: "Razorpay returns a token. From now on AwaazPay charges server-to-server after a Voice PIN — no PIN pad, no OTP." },
+    ];
+  };
 
   const openMandateSetup = () => {
     const modal = byId("mandateModal");
     const list = byId("mandateSteps");
     if (!modal || !list) return;
-    list.innerHTML = mandateSetupSteps
+    const setupSteps = buildMandateSetupSteps();
+    list.innerHTML = setupSteps
       .map((step, index) => `<li class="mandate-step" data-index="${index}"><span class="mandate-step-number">${String(index + 1).padStart(2, "0")}</span><span class="mandate-step-copy"><strong>${escapeHTML(step.title)}</strong><small>${escapeHTML(step.detail)}</small></span><span class="mandate-step-state">waiting</span></li>`)
       .join("");
     modal.classList.remove("hidden");
     document.body.classList.add("modal-open");
     renderBioEnrollment();
+    prefillCaregiverForm();
     addAudit("Mandate setup replayed", "Caregiver setup is a one-time visual flow; the demo replays it so judges can see where authorization comes from.", "safe", "users");
 
     const steps = $$(".mandate-step", list);
@@ -2707,6 +2904,186 @@
     if (!dom.auditModal.classList.contains("hidden") || !dom.infoModal.classList.contains("hidden")) return;
     document.body.classList.remove("modal-open");
   };
+
+  /* ---------------------------------------- caregiver profile setup (visual, one time) */
+
+  /** Fills the setup form from the mandate the server returned. */
+  const prefillCaregiverForm = () => {
+    const mandate = appState.mandate || {};
+    const set = (el, value) => {
+      if (el && value !== undefined && value !== null && !document.activeElement?.isSameNode?.(el)) el.value = value;
+    };
+    set(dom.elderNameInput, mandate.elder?.name);
+    set(dom.elderContactInput, mandate.elder?.contact);
+    set(dom.caregiverNameInput, mandate.caregiver?.name);
+    set(dom.caregiverRelationshipInput, mandate.caregiver?.relationship);
+    set(dom.caregiverPhoneInput, mandate.caregiver?.phone);
+    set(dom.perTxnLimitInput, mandate.perTransactionLimit);
+    set(dom.dailyLimitInput, mandate.dailyLimit);
+    if (dom.voicePinSetInput) dom.voicePinSetInput.value = "";
+    if (dom.profileSaveNote) {
+      dom.profileSaveNote.textContent = "";
+      dom.profileSaveNote.classList.remove("error", "saved");
+    }
+  };
+
+  /** POST /api/caregiver/profile — caregiver personalises names, relationships and bounds. */
+  const saveCaregiverProfile = async (formData) => {
+    if (!appState.serverAvailable) {
+      applyCaregiverProfileLocally(formData);
+      return { offline: true };
+    }
+    try {
+      const response = await fetch("/api/caregiver/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.updated) {
+        return { error: body.reason || "The caregiver profile could not be saved." };
+      }
+      return body;
+    } catch (error) {
+      return { error: "The server could not be reached." };
+    }
+  };
+
+  /** Offline mirror of the profile edit so the static file (no server) stays demonstrable. */
+  const applyCaregiverProfileLocally = (formData) => {
+    if (formData.elderName) appState.mandate.elder = { ...appState.mandate.elder, name: formData.elderName, handle: initials(formData.elderName) };
+    if (formData.caregiverName) appState.mandate.caregiver = { ...appState.mandate.caregiver, name: formData.caregiverName };
+    if (formData.caregiverRelationship) appState.mandate.caregiver = { ...appState.mandate.caregiver, relationship: formData.caregiverRelationship };
+    if (formData.perTransactionLimit) appState.mandate.perTransactionLimit = Number(formData.perTransactionLimit);
+    if (formData.dailyLimit) appState.mandate.dailyLimit = Number(formData.dailyLimit);
+  };
+
+  const bindCaregiverProfileForm = () => {
+    dom.caregiverProfileForm?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const note = dom.profileSaveNote;
+      const flag = (message, tone) => {
+        if (!note) return;
+        note.textContent = message;
+        note.classList.toggle("error", tone === "error");
+        note.classList.toggle("saved", tone !== "error");
+      };
+
+      const formData = {
+        elderName: dom.elderNameInput?.value.trim(),
+        elderContact: dom.elderContactInput?.value.replace(/\D/g, ""),
+        caregiverName: dom.caregiverNameInput?.value.trim(),
+        caregiverRelationship: dom.caregiverRelationshipInput?.value.trim(),
+        caregiverPhone: dom.caregiverPhoneInput?.value.trim(),
+        perTransactionLimit: dom.perTxnLimitInput?.value ? Number(dom.perTxnLimitInput.value) : null,
+        dailyLimit: dom.dailyLimitInput?.value ? Number(dom.dailyLimitInput.value) : null,
+      };
+      Object.keys(formData).forEach((key) => {
+        if (formData[key] === "" || formData[key] === null) delete formData[key];
+      });
+
+      const newPin = dom.voicePinSetInput?.value.replace(/\D/g, "") || "";
+      if (newPin) {
+        if (newPin.length < 4 || newPin.length > 6) {
+          flag("The Voice PIN must be 4 to 6 digits.", "error");
+          showToast("Voice PIN must be 4–6 digits", "danger");
+          return;
+        }
+        if (appState.serverAvailable) {
+          try {
+            const response = await fetch("/api/voice-pin/set", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ pinDigits: newPin }),
+            });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok || !body.updated) {
+              flag(body.reason || "The Voice PIN could not be saved.", "error");
+              return;
+            }
+            appState.mandate.demoVoicePin = body.demoVoicePin || newPin;
+            addAudit("Voice PIN changed by caregiver", `The caregiver set a ${body.voicePinLength}-digit Voice PIN. Only its salted hash was stored.`, "warning", "key");
+          } catch (error) {
+            flag("The server could not be reached to set the Voice PIN.", "error");
+            return;
+          }
+        } else {
+          appState.mandate.demoVoicePin = newPin;
+        }
+      }
+
+      const result = await saveCaregiverProfile(formData);
+      if (result.error) {
+        flag(result.error, "error");
+        showToast(result.error, "danger");
+        return;
+      }
+      await loadMandate();
+      const changed = Object.keys(result.updates || formData).join(", ").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+      addAudit(
+        "Caregiver profile saved",
+        `The caregiver updated the one-time visual setup${changed ? `: ${changed}` : ""}${result.offline ? " (offline simulation)" : ""}.`,
+        "safe",
+        "users",
+      );
+      flag("Saved. New hands-free payments use these bounds and this caregiver.", "saved");
+      showToast("Caregiver profile saved");
+      speak("Caregiver profile saved.");
+      if (dom.voicePinSetInput) dom.voicePinSetInput.value = "";
+    });
+  };
+
+  /** POST /api/caregiver/payees — add a merchant to the hands-free allowlist (visual step). */
+  const bindPayeeAddForm = () => {
+    dom.payeeAddForm?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const name = dom.newPayeeName?.value.trim();
+      const vpa = dom.newPayeeVpa?.value.trim().toLowerCase();
+      const usualRaw = dom.newPayeeUsual?.value.trim();
+      if (!name || !vpa) {
+        showToast("Please give the merchant a name and a UPI ID.", "danger");
+        return;
+      }
+      const payload = { name, vpa, usualAmountRupees: usualRaw ? Number(usualRaw) : 0 };
+      if (appState.serverAvailable) {
+        try {
+          const response = await fetch("/api/caregiver/payees", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok || (!body.added && !body.payee)) {
+            showToast(body.reason || "That payee could not be added.", "danger");
+            return;
+          }
+          await loadMandate();
+          addAudit(
+            body.updated ? "Trusted payee updated" : "Trusted payee added",
+            `${name} (${vpa}) is ${body.updated ? "updated" : "now on"} the caregiver mandate allowlist and can be paid hands-free.`,
+            "safe",
+            "users",
+          );
+          showToast(body.updated ? `${name} updated` : `${name} added to trusted payees`);
+        } catch (error) {
+          showToast("The server could not be reached.", "danger");
+          return;
+        }
+      } else {
+        const list = appState.mandate.authorizedPayees || (appState.mandate.authorizedPayees = []);
+        const existing = list.find((payee) => payee.name.toLowerCase() === name.toLowerCase() || payee.vpa === vpa);
+        if (existing) existing.usualAmountRupees = payload.usualAmountRupees || existing.usualAmountRupees;
+        else list.push({ name, vpa, usualAmountRupees: payload.usualAmountRupees || 0 });
+        renderPayees();
+      }
+      if (dom.newPayeeName) dom.newPayeeName.value = "";
+      if (dom.newPayeeVpa) dom.newPayeeVpa.value = "";
+      if (dom.newPayeeUsual) dom.newPayeeUsual.value = "";
+    });
+  };
+
+  bindCaregiverProfileForm();
+  bindPayeeAddForm();
 
   // Primary voice controls.
   dom.speakButton.addEventListener("click", startOrStopListening);
@@ -2781,7 +3158,8 @@
   dom.infoModal.addEventListener("click", (event) => {
     if (event.target === dom.infoModal) closeInfo();
   });
-  $(".profile-menu")?.addEventListener("click", () => showToast("Profile controls are outside this demo."));
+  byId("profileMenuButton")?.addEventListener("click", () => openMandateSetup());
+  byId("payeesAddButton")?.addEventListener("click", () => openMandateSetup());
 
   // Caregiver mandate card + the always-visible caregiver log at the bottom.
   byId("mandateInfoButton")?.addEventListener("click", () => openInfo("mandate"));

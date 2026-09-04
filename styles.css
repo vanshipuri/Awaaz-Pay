@@ -788,6 +788,49 @@ svg { width: 20px; height: 20px; fill: none; }
 .bio-toggle-copy strong { font-size: 10px; }
 .bio-toggle-copy small { font-size: 8.5px; line-height: 1.5; color: var(--muted); }
 
+/* Hands-free yes/no hint at the confirmation step */
+.voice-answer-hint {
+  display: flex; align-items: center; gap: 9px; margin: 4px 0 2px;
+  padding: 9px 12px; border-radius: 11px; background: var(--blue-soft);
+  border: 1px solid var(--blue-line); color: var(--navy-soft); font-size: 10px; line-height: 1.4;
+}
+.voice-answer-hint strong { color: var(--blue-deep); font-weight: 800; }
+.voice-answer-pulse {
+  display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+  border-radius: 50%; background: var(--blue-deep); color: #fff; flex: 0 0 26px;
+  animation: answer-pulse 1.6s ease-in-out infinite;
+}
+.voice-answer-pulse svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+@keyframes answer-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(29, 78, 216, 0.35); }
+  55% { box-shadow: 0 0 0 8px rgba(29, 78, 216, 0); }
+}
+
+/* Caregiver profile setup — the one-time visual form */
+.caregiver-profile-setup { margin-top: 13px; padding: 13px 14px; border: 1px solid var(--blue-line); border-radius: 13px; background: linear-gradient(180deg, #f5f9ff, #fbfcfd); }
+.profile-form { display: grid; gap: 12px; margin-top: 10px; }
+.profile-fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 9px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.profile-fieldset legend { padding: 0; margin-bottom: 2px; font-size: 8.5px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--blue-deep); }
+.profile-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.profile-field span { font-size: 9px; font-weight: 650; color: var(--ink-soft); }
+.profile-field input {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px;
+  background: #fff; color: var(--ink); font-size: 11px; outline: none; transition: border-color .15s, box-shadow .15s;
+}
+.profile-field input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+.profile-field-wide { grid-column: 1 / -1; }
+.profile-form-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.profile-save-note { font-size: 9px; color: var(--teal-dark); font-weight: 650; }
+.profile-save-note.error { color: var(--red); }
+.payee-add-form { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); display: grid; gap: 8px; }
+.payee-add-form .section-kicker { color: var(--teal-dark); }
+.payee-add-row { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); align-items: end; }
+.payee-add-note { margin: 0; font-size: 8.5px; line-height: 1.5; color: var(--muted); }
+.payee-list { display: grid; gap: 2px; }
+.payee-avatar.green { background: #e3f6e4; color: #2e7d43; }
+.payee-avatar.pink { background: #fde9f0; color: #b23a69; }
+.payee-avatar.teal { background: #e0f5f3; color: #0a7c73; }
+
 @media (max-width: 620px) {
   .bio-factors { grid-template-columns: 1fr; }
   .bio-factor-state { display: none; }

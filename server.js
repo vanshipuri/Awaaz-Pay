@@ -38,7 +38,7 @@ const host = '0.0.0.0';
 
 /* ------------------------------------------------------------------ config */
 
-const DEMO_VOICE_PIN = (String(process.env.AWAAZPAY_VOICE_PIN || '1234').replace(/\D/g, '') || '1234').slice(0, 6);
+const DEFAULT_VOICE_PIN = (String(process.env.AWAAZPAY_VOICE_PIN || '1234').replace(/\D/g, '') || '1234').slice(0, 6);
 const PIN_SALT = process.env.AWAAZPAY_PIN_SALT || crypto.randomBytes(16).toString('hex');
 const AUTH_SECRET = process.env.AWAAZPAY_AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_TTL_SECONDS = Number(process.env.AWAAZPAY_TOKEN_TTL || 90);
@@ -48,6 +48,11 @@ const PIN_LOCK_SECONDS = Number(process.env.AWAAZPAY_PIN_LOCK_SECONDS || 60);
 const MANDATE_PER_TXN_LIMIT = Number(process.env.MANDATE_PER_TXN_LIMIT || 5000);
 const MANDATE_DAILY_LIMIT = Number(process.env.MANDATE_DAILY_LIMIT || 15000);
 const WALLET_OPENING_BALANCE = Number(process.env.WALLET_BALANCE || 12500);
+
+// RBI UPI AutoPay hands-free ceiling. The caregiver may set a *stricter* bound, never a
+// looser one — a profile edit cannot widen the compliant cap.
+const MAX_HANDS_FREE_PER_TXN = 15000;
+const MAX_HANDS_FREE_DAILY = 50000;
 
 const razorpayConfigured = Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET);
 
@@ -64,9 +69,17 @@ const mandateState = {
   usedToday: 0,
   createdAt: new Date(Date.now() - 6 * 864e5).toISOString(),
   expiresAt: new Date(Date.now() + 359 * 864e5).toISOString(),
+  // The person AwaazPay speaks for. Editable from the caregiver setup screen.
+  elder: {
+    name: process.env.ELDER_NAME || 'Sarla Devi',
+    handle: 'SD',
+    contact: process.env.ELDER_CONTACT || '919812300000',
+    upiHandle: 'sarala.devi@okhdfcbank',
+  },
   caregiver: {
-    name: 'Meera Sharma',
-    relationship: 'Daughter',
+    name: process.env.CAREGIVER_NAME || 'Meera Sharma',
+    relationship: process.env.CAREGIVER_RELATIONSHIP || 'Daughter',
+    phone: process.env.CAREGIVER_PHONE || '+91 98200 11223',
     consent: 'Setup completed visually on 28 Aug · UPI PIN entered in bank app by caregiver',
   },
   wallet: {
@@ -82,20 +95,60 @@ const mandateState = {
   ],
 };
 
+// The Voice PIN is chosen during the caregiver setup. The salted hash is the only thing
+// stored; the digits themselves are never persisted or logged. Initialised right after
+// hashPin() is defined in the Voice PIN section below.
+let voicePinHash = null;
+let voicePinLength = DEFAULT_VOICE_PIN.length;
+
+const initialsFromName = (name) =>
+  String(name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0] || '')
+    .join('')
+    .toUpperCase() || 'AP';
+
 const mandatePublicView = () => ({
   ...mandateState,
+  elder: { ...mandateState.elder, handle: initialsFromName(mandateState.elder.name) },
   remainingToday: Math.max(0, mandateState.dailyLimit - mandateState.usedToday),
   handsFree: mandateState.status === 'active',
   paymentMode: razorpayConfigured ? 'razorpay-live' : 'smart-demo',
-  voicePinLength: DEMO_VOICE_PIN.length,
-  demoVoicePin: razorpayConfigured ? null : DEMO_VOICE_PIN,
+  voicePinLength,
+  demoVoicePin: razorpayConfigured ? null : DEFAULT_VOICE_PIN,
   biometrics: biometricPublicView(),
 });
 
 /* ------------------------------------------------------- voice PIN security */
 
 const hashPin = (digits) => crypto.createHash('sha256').update(`${PIN_SALT}:${digits}`).digest('hex');
-const storedPinHash = hashPin(DEMO_VOICE_PIN);
+voicePinHash = hashPin(DEFAULT_VOICE_PIN);
+
+/** Caregiver sets a new Voice PIN during setup. Only the salted hash is ever kept. */
+const updateVoicePin = (payload) => {
+  const digits = String(payload.pinDigits || '').replace(/\D/g, '');
+  if (digits.length < 4 || digits.length > 6) {
+    return { status: 400, body: { updated: false, reason: 'The Voice PIN must be 4 to 6 digits.' } };
+  }
+  voicePinHash = hashPin(digits);
+  voicePinLength = digits.length;
+  // A PIN change invalidates every existing per-session attempt record.
+  pinAttempts.clear();
+  console.log(`[caregiver] Voice PIN changed · ${digits.length} digits · only the salted hash was stored`);
+  return {
+    status: 200,
+    body: {
+      updated: true,
+      voicePinLength: digits.length,
+      // Smart Demo Mode echoes the demo PIN so the judge is never stuck; live mode never does.
+      demoVoicePin: razorpayConfigured ? null : digits,
+      note: 'Voice PIN updated. Three wrong attempts still lock the payment.',
+    },
+  };
+};
 
 /** Attempts are tracked per browser session so a bystander cannot brute force the PIN. */
 const pinAttempts = new Map();
@@ -415,10 +468,10 @@ const verifyVoicePin = (payload) => {
     };
   }
 
-  if (digits.length < 4 || digits.length > 6) {
+  if (digits.length !== voicePinLength) {
     return {
       status: 400,
-      body: { verified: false, reason: 'A Voice PIN of 4 to 6 digits is required.', attemptsLeft: PIN_MAX_ATTEMPTS - record.failures },
+      body: { verified: false, reason: `Your Voice PIN is ${voicePinLength} digits long.`, attemptsLeft: PIN_MAX_ATTEMPTS - record.failures },
     };
   }
 
@@ -458,7 +511,7 @@ const verifyVoicePin = (payload) => {
   }
 
   const providedHash = hashPin(digits);
-  const pinMatches = crypto.timingSafeEqual(Buffer.from(providedHash), Buffer.from(storedPinHash));
+  const pinMatches = crypto.timingSafeEqual(Buffer.from(providedHash), Buffer.from(voicePinHash));
   const score = voiceprintScore(sessionId, digits, Number(payload.sampleMs) || 1200);
   const voiceMatches = score >= 0.85;
 
@@ -957,6 +1010,136 @@ const verifyBiometric = (payload) => {
   };
 };
 
+/* ------------------------------------------------------ caregiver profile */
+
+/**
+ * The caregiver owns the one-time visual setup. This endpoint lets them personalise it:
+ * who the elder is, who the caregiver is and how they are reached, and the hands-free
+ * bounds. Bounds can only be tightened under RBI's UPI AutoPay ceiling, never widened.
+ */
+const VPA_PATTERN = /^[a-z0-9][a-z0-9.\-_]{2,}@[a-z0-9]{2,}$/i;
+
+const updateCaregiverProfile = (payload) => {
+  const updates = {};
+
+  const elderName = String(payload.elderName || '').trim();
+  if (elderName) {
+    if (elderName.length < 2 || elderName.length > 60) {
+      return { status: 400, body: { updated: false, reason: 'The account holder name must be 2 to 60 characters.' } };
+    }
+    mandateState.elder.name = elderName;
+    mandateState.elder.handle = initialsFromName(elderName);
+    updates.elderName = elderName;
+  }
+  const elderContact = String(payload.elderContact || '').replace(/[^0-9]/g, '');
+  if (elderContact) {
+    if (elderContact.length < 10 || elderContact.length > 12) {
+      return { status: 400, body: { updated: false, reason: 'The account holder phone number must be 10 to 12 digits.' } };
+    }
+    mandateState.elder.contact = elderContact;
+    updates.elderContact = elderContact;
+  }
+
+  const caregiverName = String(payload.caregiverName || '').trim();
+  if (caregiverName) {
+    if (caregiverName.length < 2 || caregiverName.length > 60) {
+      return { status: 400, body: { updated: false, reason: 'The caregiver name must be 2 to 60 characters.' } };
+    }
+    mandateState.caregiver.name = caregiverName;
+    updates.caregiverName = caregiverName;
+  }
+  const relationship = String(payload.caregiverRelationship || '').trim();
+  if (relationship) {
+    mandateState.caregiver.relationship = relationship.slice(0, 40);
+    updates.caregiverRelationship = mandateState.caregiver.relationship;
+  }
+  const phone = String(payload.caregiverPhone || '').replace(/[^0-9+]/g, '');
+  if (phone) {
+    mandateState.caregiver.phone = phone.slice(0, 16);
+    updates.caregiverPhone = mandateState.caregiver.phone;
+  }
+
+  if (payload.perTransactionLimit !== undefined && payload.perTransactionLimit !== null && payload.perTransactionLimit !== '') {
+    const perTxn = Number(payload.perTransactionLimit);
+    if (!Number.isFinite(perTxn) || perTxn < 100 || perTxn > MAX_HANDS_FREE_PER_TXN) {
+      return { status: 400, body: { updated: false, reason: `The per-transaction limit must be between ₹100 and ₹${MAX_HANDS_FREE_PER_TXN.toLocaleString('en-IN')}.` } };
+    }
+    mandateState.perTransactionLimit = Math.round(perTxn);
+    updates.perTransactionLimit = mandateState.perTransactionLimit;
+  }
+  if (payload.dailyLimit !== undefined && payload.dailyLimit !== null && payload.dailyLimit !== '') {
+    const daily = Number(payload.dailyLimit);
+    if (!Number.isFinite(daily) || daily < mandateState.perTransactionLimit || daily > MAX_HANDS_FREE_DAILY) {
+      return {
+        status: 400,
+        body: { updated: false, reason: `The daily limit must be between the per-transaction limit and ₹${MAX_HANDS_FREE_DAILY.toLocaleString('en-IN')}.` },
+      };
+    }
+    mandateState.dailyLimit = Math.round(daily);
+    updates.dailyLimit = mandateState.dailyLimit;
+  }
+
+  if (!Object.keys(updates).length) {
+    return { status: 400, body: { updated: false, reason: 'Nothing to update was recognised.' } };
+  }
+
+  mandateState.caregiver.consent = `Profile updated visually by caregiver on ${new Date().toLocaleDateString('en-IN')} · UPI PIN stays in the bank's secure surface`;
+  console.log(`[caregiver] profile updated: ${Object.keys(updates).join(', ')}`);
+
+  return {
+    status: 200,
+    body: {
+      updated: true,
+      updates,
+      elder: mandateState.elder,
+      caregiver: mandateState.caregiver,
+      perTransactionLimit: mandateState.perTransactionLimit,
+      dailyLimit: mandateState.dailyLimit,
+      note: 'Caregiver profile saved. Hands-free bounds can be tightened, never widened past RBI limits.',
+    },
+  };
+};
+
+/** Adds a merchant to the mandate's authorized-payee allowlist (the visual caregiver step). */
+const addAuthorizedPayee = (payload) => {
+  const name = String(payload.name || '').trim();
+  const vpa = String(payload.vpa || '').trim().toLowerCase();
+  const usual = Number(payload.usualAmountRupees);
+
+  if (name.length < 2 || name.length > 60) {
+    return { status: 400, body: { added: false, reason: 'The payee name must be 2 to 60 characters.' } };
+  }
+  if (!VPA_PATTERN.test(vpa)) {
+    return { status: 400, body: { added: false, reason: 'The UPI ID must look like sharma.kirana@okhdfcbank.' } };
+  }
+  const usualAmountRupees = Number.isFinite(usual) && usual > 0 ? Math.round(usual) : 0;
+
+  const existing = mandateState.authorizedPayees.find(
+    (payee) => payee.name.toLowerCase() === name.toLowerCase() || payee.vpa === vpa,
+  );
+  if (existing) {
+    existing.usualAmountRupees = usualAmountRupees || existing.usualAmountRupees;
+    return {
+      status: 200,
+      body: { added: true, updated: true, payee: existing, authorizedPayees: mandateState.authorizedPayees },
+    };
+  }
+
+  const payee = { name, vpa, usualAmountRupees, addedAt: new Date().toISOString(), addedBy: mandateState.caregiver.name };
+  mandateState.authorizedPayees.push(payee);
+  console.log(`[caregiver] payee added to mandate allowlist: ${name} <${vpa}>`);
+
+  return {
+    status: 200,
+    body: {
+      added: true,
+      payee,
+      authorizedPayees: mandateState.authorizedPayees,
+      note: `${name} can now be paid hands-free inside the mandate. Anyone else still needs caregiver approval.`,
+    },
+  };
+};
+
 /** The caregiver decides whether a device biometric may replace the Voice PIN. */
 const setBiometricSettings = (payload) => {
   if (typeof payload.deviceBiometricSkipsPin !== 'boolean') {
@@ -995,7 +1178,7 @@ const handleAPI = async (req, res) => {
       razorpayConfigured,
       paymentMode: razorpayConfigured ? 'razorpay-live' : 'smart-demo',
       intentMode: process.env.GROQ_API_KEY ? 'groq' : 'smart-demo-local-simulator',
-      voicePin: { length: DEMO_VOICE_PIN.length, maxAttempts: PIN_MAX_ATTEMPTS, lockSeconds: PIN_LOCK_SECONDS, serverVerified: true },
+      voicePin: { length: voicePinLength, maxAttempts: PIN_MAX_ATTEMPTS, lockSeconds: PIN_LOCK_SECONDS, serverVerified: true },
       mandate: { id: mandateState.id, perTransactionLimit: mandateState.perTransactionLimit, status: mandateState.status },
       mode: process.env.GROQ_API_KEY || razorpayConfigured ? 'configured' : 'demo',
     });
@@ -1040,6 +1223,26 @@ const handleAPI = async (req, res) => {
       if (result.status === 200) {
         console.log(`[caregiver] approval ${result.body.approvalId} recorded for ${body.intentId} (${body.amountPaise / 100} INR)`);
       }
+      return true;
+    }
+
+    if (pathname === '/api/caregiver/profile' && req.method === 'POST') {
+      const result = updateCaregiverProfile(body);
+      json(res, result.status, result.body);
+      if (result.status === 200) console.log(`[caregiver] profile saved by ${result.body.caregiver?.name || 'caregiver'}`);
+      return true;
+    }
+
+    if (pathname === '/api/caregiver/payees' && req.method === 'POST') {
+      const result = addAuthorizedPayee(body);
+      json(res, result.status, result.body);
+      if (result.status === 200) console.log(`[caregiver] payee allowlist now has ${result.body.authorizedPayees.length} merchants`);
+      return true;
+    }
+
+    if (pathname === '/api/voice-pin/set' && req.method === 'POST') {
+      const result = updateVoicePin(body);
+      json(res, result.status, result.body);
       return true;
     }
 
@@ -1270,5 +1473,5 @@ server.listen(port, host, () => {
   console.log(`Intent mode: ${process.env.GROQ_API_KEY ? `Groq (${process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'})` : 'Smart Demo Mode · local AI simulator'}`);
   console.log(`Payment mode: ${razorpayConfigured ? 'Razorpay test/live S2S (mandate)' : 'Smart Demo Mode · simulated Razorpay S2S'}`);
   console.log(`Mandate: ${mandateState.id} · hands-free up to ₹${MANDATE_PER_TXN_LIMIT} per transaction · ₹${MANDATE_DAILY_LIMIT} per day`);
-  console.log(`Voice PIN: server-verified, ${DEMO_VOICE_PIN.length} digits, ${PIN_MAX_ATTEMPTS} attempts before a ${PIN_LOCK_SECONDS}s lockout${razorpayConfigured ? '' : ` · demo PIN ${DEMO_VOICE_PIN}`}`);
+  console.log(`Voice PIN: server-verified, ${voicePinLength} digits, ${PIN_MAX_ATTEMPTS} attempts before a ${PIN_LOCK_SECONDS}s lockout${razorpayConfigured ? '' : ` · demo PIN ${DEFAULT_VOICE_PIN}`}`);
 });

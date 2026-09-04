@@ -327,6 +327,119 @@ test('an unknown API route is not silently treated as a payment', async () => {
   assert.equal(body.error, 'API route not found');
 });
 
+// --- Caregiver profile setup (one-time visual step) ---------------------------
+
+test('the caregiver can personalise the profile and tighten the mandate bounds', async () => {
+  const { status, body } = await post('/api/caregiver/profile', {
+    elderName: 'Kamla Verma',
+    caregiverName: 'Rohan Verma',
+    caregiverRelationship: 'Son',
+    caregiverPhone: '+91 98111 22233',
+    perTransactionLimit: 3000,
+    dailyLimit: 9000,
+  });
+  assert.equal(status, 200);
+  assert.equal(body.updated, true);
+  assert.equal(body.elder.name, 'Kamla Verma');
+  assert.equal(body.elder.handle, 'KV');
+  assert.equal(body.caregiver.name, 'Rohan Verma');
+  assert.equal(body.caregiver.relationship, 'Son');
+  assert.equal(body.perTransactionLimit, 3000);
+  assert.equal(body.dailyLimit, 9000);
+
+  const mandate = (await get('/api/mandate')).body;
+  assert.equal(mandate.elder.name, 'Kamla Verma');
+  assert.equal(mandate.perTransactionLimit, 3000);
+
+  // The tightened cap is enforced immediately: ₹4,000 now exceeds the new ₹3,000 limit.
+  const over = await verifyPin({ intentId: 'INT-TIGHT', amountPaise: 400000, sessionId: 'tight-session' });
+  assert.equal(over.status, 422);
+  assert.equal(over.body.code, 'caregiver_approval_required');
+});
+
+test('the caregiver cannot widen the hands-free bounds past the RBI ceiling', async () => {
+  const { status, body } = await post('/api/caregiver/profile', { perTransactionLimit: 99999 });
+  assert.equal(status, 400);
+  assert.equal(body.updated, false);
+  assert.match(body.reason, /per-transaction limit/);
+});
+
+test('the caregiver can set a new Voice PIN and the old one stops working', async () => {
+  const changed = await post('/api/voice-pin/set', { pinDigits: '4321' });
+  assert.equal(changed.status, 200);
+  assert.equal(changed.body.voicePinLength, 4);
+
+  const oldPin = await verifyPin({ pinDigits: DEMO_PIN, intentId: 'INT-OLDPIN', sessionId: 'oldpin-session' });
+  assert.equal(oldPin.status, 401);
+  assert.equal(oldPin.body.authToken, undefined);
+
+  const newPin = await verifyPin({ pinDigits: '4321', intentId: 'INT-NEWPIN', sessionId: 'newpin-session' });
+  assert.equal(newPin.status, 200);
+  assert.equal(newPin.body.verified, true);
+
+  // Reset back to the shared demo PIN so later assertions in this file stay valid.
+  await post('/api/voice-pin/set', { pinDigits: DEMO_PIN });
+  // And restore the default bounds used by the other tests.
+  await post('/api/caregiver/profile', { perTransactionLimit: 5000, dailyLimit: 15000, elderName: 'Sarla Devi', caregiverName: 'Meera Sharma', caregiverRelationship: 'Daughter' });
+});
+
+test('a Voice PIN outside 4–6 digits is rejected', async () => {
+  const { status, body } = await post('/api/voice-pin/set', { pinDigits: '12' });
+  assert.equal(status, 400);
+  assert.equal(body.updated, false);
+});
+
+test('the caregiver can add a trusted payee, who then pays hands-free', async () => {
+  const added = await post('/api/caregiver/payees', {
+    name: 'Gupta Dairy',
+    vpa: 'gupta.dairy@okhdfcbank',
+    usualAmountRupees: 120,
+  });
+  assert.equal(added.status, 200);
+  assert.equal(added.body.added, true);
+  assert.equal(added.body.payee.name, 'Gupta Dairy');
+
+  const mandate = (await get('/api/mandate')).body;
+  assert.ok(mandate.authorizedPayees.some((payee) => payee.vpa === 'gupta.dairy@okhdfcbank'));
+
+  // The freshly added payee is now on the allowlist and can be charged hands-free.
+  const pin = await verifyPin({
+    intentId: 'INT-DAIRY',
+    amountPaise: 12000,
+    payee: 'Gupta Dairy',
+    payeeVpa: 'gupta.dairy@okhdfcbank',
+    sessionId: 'dairy-session',
+  });
+  assert.equal(pin.status, 200);
+  const executed = await post('/api/payment/execute', {
+    authToken: pin.body.authToken,
+    intentId: 'INT-DAIRY',
+    amountPaise: 12000,
+    payee: 'Gupta Dairy',
+    payeeVpa: 'gupta.dairy@okhdfcbank',
+  });
+  assert.equal(executed.status, 200);
+  assert.equal(executed.body.payment.status, 'captured');
+});
+
+test('a payee with a malformed UPI ID is rejected', async () => {
+  const { status, body } = await post('/api/caregiver/payees', { name: 'Bad Merchant', vpa: 'not-a-vpa' });
+  assert.equal(status, 400);
+  assert.equal(body.added, false);
+  assert.match(body.reason, /UPI ID/);
+});
+
+test('adding a payee that already exists updates it instead of duplicating', async () => {
+  const first = await post('/api/caregiver/payees', { name: 'Singh Bakery', vpa: 'singh.bakery@ybl', usualAmountRupees: 80 });
+  const second = await post('/api/caregiver/payees', { name: 'Singh Bakery', vpa: 'singh.bakery@ybl', usualAmountRupees: 95 });
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  assert.equal(second.body.updated, true);
+  assert.equal(second.body.payee.usualAmountRupees, 95);
+  const count = second.body.authorizedPayees.filter((payee) => payee.vpa === 'singh.bakery@ybl').length;
+  assert.equal(count, 1);
+});
+
 // --- Biometric confirmation ---------------------------------------------------
 // These run last because enrollment and the caregiver's skip-PIN policy are server
 // state shared by the whole file.
