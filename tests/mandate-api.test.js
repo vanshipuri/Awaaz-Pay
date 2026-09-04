@@ -326,3 +326,136 @@ test('an unknown API route is not silently treated as a payment', async () => {
   assert.equal(status, 404);
   assert.equal(body.error, 'API route not found');
 });
+
+// --- Biometric confirmation ---------------------------------------------------
+// These run last because enrollment and the caregiver's skip-PIN policy are server
+// state shared by the whole file.
+
+const verifyBio = (overrides = {}) =>
+  post('/api/biometric/verify', {
+    modality: 'voiceprint',
+    transcript: 'yes confirm',
+    sampleMs: 1500,
+    sessionId: `bio-${Math.random().toString(36).slice(2)}`,
+    intentId: 'INT-BIO',
+    amountPaise: 50000,
+    payee: 'Sharma Kirana',
+    payeeVpa: 'sharmakirana@ybl',
+    ...overrides,
+  });
+
+test('the mandate exposes the biometric policy block', async () => {
+  const { status, body } = await get('/api/mandate');
+  assert.equal(status, 200);
+  assert.deepEqual(body.biometrics.modalities, ['voiceprint', 'fingerprint', 'face']);
+  assert.equal(body.biometrics.deviceBiometricSkipsPin, false);
+  assert.equal(body.biometrics.voiceprintThreshold, 0.85);
+  assert.equal(body.biometrics.fingerprintEnrolled, false);
+});
+
+test('an unenrolled biometric factor is refused before anything is scored', async () => {
+  const { status, body } = await verifyBio({ modality: 'face' });
+  assert.equal(status, 422);
+  assert.equal(body.verified, false);
+  assert.equal(body.code, 'biometric_not_enrolled');
+  assert.match(body.reason, /No face is enrolled/);
+});
+
+test('an enrolled voiceprint confirms the yes but never issues a charge token', async () => {
+  const enrolled = await post('/api/biometric/enroll', { modality: 'voiceprint', sessionId: 'bio-enroll', sampleMs: 1800 });
+  assert.equal(enrolled.status, 200);
+  assert.equal(enrolled.body.enrolled, true);
+  assert.equal(enrolled.body.engine, 'awaazpay-voiceprint-sim/1');
+
+  const { status, body } = await verifyBio();
+  assert.equal(status, 200);
+  assert.equal(body.verified, true);
+  assert.equal(body.factor, 'voiceprint');
+  assert.equal(body.nextStep, 'voice-pin', 'a voiceprint confirms but hands off to the Voice PIN');
+  assert.equal(body.authorizesCharge, false);
+  assert.equal(body.authToken, undefined, 'no charge token may be issued for a voiceprint alone');
+  assert.ok(body.score >= 0.85);
+});
+
+test('a voiceprint can never skip the PIN, even with the caregiver toggle on', async () => {
+  const setting = await post('/api/biometric/settings', { deviceBiometricSkipsPin: true });
+  assert.equal(setting.status, 200);
+  assert.equal(setting.body.deviceBiometricSkipsPin, true);
+  assert.equal(setting.body.voiceprintNeverSkipsPin, true);
+
+  const { body } = await verifyBio();
+  assert.equal(body.verified, true);
+  assert.equal(body.nextStep, 'voice-pin');
+  assert.equal(body.authorizesCharge, false);
+  assert.equal(body.authToken, undefined);
+});
+
+test('the settings endpoint rejects a non-boolean policy', async () => {
+  const { status, body } = await post('/api/biometric/settings', { deviceBiometricSkipsPin: 'yes' });
+  assert.equal(status, 400);
+  assert.equal(body.updated, false);
+});
+
+test('a device biometric with the caregiver toggle on authorizes the charge with no PIN', async () => {
+  const enrolled = await post('/api/biometric/enroll', { modality: 'fingerprint', sessionId: 'bio-fp' });
+  assert.equal(enrolled.status, 200);
+  assert.equal(enrolled.body.simulated, true, 'no platform authenticator in a test run, so it must say so');
+  assert.equal(enrolled.body.engine, 'awaazpay-sim/1');
+
+  const { status, body } = await verifyBio({ modality: 'fingerprint', intentId: 'INT-BIOFP' });
+  assert.equal(status, 200);
+  assert.equal(body.verified, true);
+  assert.equal(body.nextStep, 'execute');
+  assert.equal(body.authorizesCharge, true);
+  assert.ok(body.authToken, 'a device biometric must yield a mandate-auth token');
+  assert.equal(body.authorizationMode, 'fingerprint-biometric-hands-free');
+
+  const before = (await get('/api/mandate')).body.wallet.balance;
+  const executed = await post('/api/payment/execute', { authToken: body.authToken, intentId: 'INT-BIOFP' });
+  assert.equal(executed.status, 200);
+  assert.equal(executed.body.payment.status, 'captured');
+  assert.equal(executed.body.authorizationFactor, 'fingerprint');
+  assert.equal(executed.body.authorizationMode, 'fingerprint-biometric-hands-free');
+  assert.equal(executed.body.visualPinPadShown, false);
+  assert.equal(executed.body.payment.authorization_mode, 'fingerprint-biometric-hands-free');
+  assert.equal(executed.body.walletBalance, before - 500);
+});
+
+test('a biometric cannot bypass the caregiver payee allowlist', async () => {
+  const { status, body } = await verifyBio({
+    modality: 'fingerprint',
+    intentId: 'INT-BIOPAYEE',
+    payee: 'Sharma Kiran Store',
+    payeeVpa: 'sharma.kirana@okaxis',
+  });
+  assert.equal(status, 422);
+  assert.equal(body.verified, false);
+  assert.equal(body.code, 'payee_not_on_mandate');
+  assert.equal(body.authToken, undefined);
+});
+
+test('a biometric cannot bypass the per-transaction mandate cap', async () => {
+  const { status, body } = await verifyBio({ modality: 'fingerprint', intentId: 'INT-BIOCAP', amountPaise: 600000 });
+  assert.equal(status, 422);
+  assert.equal(body.verified, false);
+  assert.equal(body.code, 'caregiver_approval_required');
+  assert.equal(body.authToken, undefined);
+});
+
+test('a WebAuthn assertion is refused without a fresh single-use challenge', async () => {
+  const { status, body } = await verifyBio({
+    modality: 'fingerprint',
+    intentId: 'INT-BIOCHAL',
+    assertion: { credentialId: 'fake', authenticatorData: 'AA', clientDataJSON: 'AA', signature: 'AA' },
+  });
+  assert.equal(status, 400);
+  assert.equal(body.verified, false);
+  assert.match(body.reason, /challenge/i);
+});
+
+test('a voiceprint sample is required to match against', async () => {
+  const { status, body } = await verifyBio({ transcript: '   ' });
+  assert.equal(status, 400);
+  assert.equal(body.verified, false);
+  assert.match(body.reason, /spoken sample/i);
+});

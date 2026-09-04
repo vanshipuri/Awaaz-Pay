@@ -238,6 +238,16 @@
       verifying: false,
       awaitingSpokenPin: false,
     },
+    // Which challenge the blue indicator is showing: a biometric factor or the Voice PIN.
+    authChallenge: "pin",
+    biometrics: {
+      voiceprint: null,
+      credentials: [],
+      fingerprintEnrolled: false,
+      faceEnrolled: false,
+      deviceBiometricSkipsPin: false,
+      verifying: false,
+    },
     metrics: {
       paymentsCompleted: 0,
       scamsBlocked: 0,
@@ -347,9 +357,23 @@
     const waitingForPin = nextStatus === "authenticate";
     dom.pinBadge?.classList.toggle("hidden", !waitingForPin);
     dom.voiceStage?.classList.toggle("awaiting-pin", waitingForPin);
-    if (waitingForPin && dom.pinBadgeText) dom.pinBadgeText.textContent = "WAITING FOR VOICE PIN";
+    if (waitingForPin && dom.pinBadgeText) {
+      dom.pinBadgeText.textContent = appState.authChallenge === "biometric" ? "WAITING FOR BIOMETRIC" : "WAITING FOR VOICE PIN";
+    }
 
     updateAgentSteps(nextStatus);
+  };
+
+  /**
+   * Sets which challenge the blue indicator is describing and syncs the badge text at once.
+   * Needed because setState() reads appState.authChallenge, so flipping the challenge after
+   * setState() would leave the badge showing the previous step's label.
+   */
+  const setAuthChallenge = (kind) => {
+    appState.authChallenge = kind;
+    if (dom.pinBadgeText) {
+      dom.pinBadgeText.textContent = kind === "biometric" ? "WAITING FOR BIOMETRIC" : "WAITING FOR VOICE PIN";
+    }
   };
 
   const updateAgentSteps = (status) => {
@@ -691,6 +715,7 @@
       appState.serverAvailable = true;
       if (typeof mandate.wallet?.balance === "number") appState.balance = mandate.wallet.balance;
       if (!mandate.demoVoicePin) appState.mandate.demoVoicePin = appState.smartDemoMode ? FALLBACK_VOICE_PIN : null;
+      if (mandate.biometrics) applyBiometricState(mandate.biometrics);
       updateBalance();
     } catch (error) {
       appState.mandate = { ...fallbackMandate };
@@ -931,7 +956,7 @@
       "safe",
       source === "click" ? "check" : "mic",
     );
-    enterVoicePin(payment);
+    startAuthorization(payment, { transcript, source });
   };
 
   /**
@@ -1168,6 +1193,7 @@
   const redactedPin = (digits = "") => "•".repeat(digits.length || PIN_LENGTH);
 
   const renderVoicePin = (payment, options = {}) => {
+    setAuthChallenge("pin");
     const pin = appState.voicePin;
     const attemptsLeft = Math.max(0, PIN_MAX_ATTEMPTS - pin.attempts);
     const boxes = Array.from({ length: PIN_LENGTH })
@@ -1319,8 +1345,545 @@
     }
   };
 
+  /* ----------------------------------------------------- biometric confirm */
+
+  const b64urlToBytes = (value) => {
+    const normalized = String(value).replace(/-/g, "+").replace(/_/g, "/");
+    const binary = window.atob(normalized + "=".repeat((4 - (normalized.length % 4)) % 4));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
+  };
+
+  const bytesToB64url = (buffer) => {
+    const bytes = new Uint8Array(buffer || []);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+    return window.btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  };
+
+  const postBiometric = async (path, payload) => {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return { response, body: await response.json().catch(() => ({})) };
+  };
+
+  /** True when the browser can reach a platform authenticator (Windows Hello, Touch ID). */
+  const webAuthnAvailable = () =>
+    Boolean(window.PublicKeyCredential && navigator.credentials?.create && navigator.credentials?.get);
+
+  const biometricCredential = (modality) =>
+    (appState.biometrics.credentials || []).find((credential) => credential.modality === modality) || null;
+
+  const isBiometricEnrolled = (modality) =>
+    modality === "voiceprint" ? Boolean(appState.biometrics.voiceprint) : Boolean(biometricCredential(modality));
+
+  const biometricEngineLabel = (modality) => {
+    if (modality === "voiceprint") return appState.biometrics.voiceprint?.engine || "";
+    return biometricCredential(modality)?.engine || "";
+  };
+
+  const applyBiometricState = (biometrics = {}) => {
+    appState.biometrics = {
+      ...appState.biometrics,
+      ...biometrics,
+      credentials: biometrics.credentials || appState.biometrics.credentials || [],
+      verifying: appState.biometrics.verifying,
+    };
+  };
+
+  /** Hardware-backed factors. Only these can authorize a charge outright, and only if the caregiver allows it. */
+  const DEVICE_BIO_FACTORS = ["fingerprint", "face"];
+  const anyDeviceBiometricEnrolled = () => DEVICE_BIO_FACTORS.some((modality) => isBiometricEnrolled(modality));
+
+  const BIO_FACTORS = [
+    { modality: "voiceprint", icon: "mic", label: "Voice biometric", hint: "Say your yes again — matched against your enrolled voice" },
+    { modality: "fingerprint", icon: "fingerprint", label: "Fingerprint", hint: "Device platform authenticator · user verification required" },
+    { modality: "face", icon: "eye-off", label: "Face scan", hint: "Device platform authenticator · user verification required" },
+  ];
+
+  const bioFactorButtonHTML = ({ modality, icon, label, hint }) => {
+    const enrolled = isBiometricEnrolled(modality);
+    const engine = biometricEngineLabel(modality);
+    const simulated = engine === "awaazpay-sim/1" || engine === "awaazpay-voiceprint-sim/1";
+    return `
+      <button class="bio-factor ${enrolled ? "enrolled" : "unenrolled"}" type="button" data-bio-factor="${modality}"
+        ${appState.biometrics.verifying ? "disabled" : ""} aria-busy="${appState.biometrics.verifying ? "true" : "false"}"
+        aria-label="${label}${enrolled ? "" : " — not enrolled yet"}">
+        <svg><use href="#icon-${icon}"></use></svg>
+        <span class="bio-factor-copy"><strong>${label}</strong><small>${hint}</small></span>
+        <em class="bio-factor-state">${enrolled ? (simulated ? "Simulated" : "Verified") : "Enroll first"}</em>
+      </button>`;
+  };
+
+  /**
+   * The biometric confirmation panel. Reached after the user says yes, so the yes itself is
+   * never a bare click: it has to be backed by a voice, fingerprint or face factor.
+   */
+  const renderBiometricPanel = (payment, options = {}) => {
+    setAuthChallenge("biometric");
+    setState("authenticate");
+    dom.reviewEmpty.classList.add("hidden");
+    dom.reviewContent.classList.remove("hidden");
+    dom.reviewContent.innerHTML = `
+      <div class="review-head"><span class="section-kicker">HANDS-FREE CONFIRMATION</span><span class="review-ref">${escapeHTML(payment.intentId)} · biometric factor</span></div>
+      <div class="transaction-summary compact">
+        <div class="summary-avatar ${payment.payee.trusted ? "" : "unknown"}">${escapeHTML(payment.payee.short)}</div>
+        <div class="summary-copy"><span>Confirming payment to</span><strong>${escapeHTML(payment.payee.name)}</strong><small>${escapeHTML(payment.payee.vpa)} · mandate ${escapeHTML(appState.mandate.id)}</small></div>
+        <div class="summary-amount"><strong>${formatCurrency(payment.amount)}</strong><span>${payment.handsFreeEligible ? "Inside mandate" : "Caregiver assisted"}</span></div>
+      </div>
+
+      <div class="bio-panel ${appState.biometrics.verifying ? "verifying" : ""} ${options.error ? "error" : ""}">
+        <div class="pin-panel-head">
+          <span class="pin-badge-inline"><span class="pin-badge-shield">🛡️</span> WAITING FOR BIOMETRIC</span>
+          <span class="pin-attempts">${appState.biometrics.verifying ? "matching your biometric…" : "no button press needed"}</span>
+        </div>
+        <h2 id="bioHeading">Confirm it is really you</h2>
+        <p class="pin-hint">${options.error
+          ? escapeHTML(options.error)
+          : options.message
+            ? escapeHTML(options.message)
+            : "You said yes. Now confirm with your voice, fingerprint or face — no OTP screen and no PIN pad."}</p>
+        <div class="bio-factors" role="group" aria-label="Biometric confirmation factors">
+          ${BIO_FACTORS.map(bioFactorButtonHTML).join("")}
+        </div>
+        <div class="bio-fallback-row">
+          <button class="secondary-button" id="bioUsePin" type="button"><svg><use href="#icon-key"></use></svg> Use the Voice PIN instead</button>
+          <button class="cancel-action" id="bioCancel" type="button">Cancel payment</button>
+        </div>
+        <p class="bio-engine-note">${webAuthnAvailable()
+          ? "This browser can reach a platform authenticator, so fingerprint and face use real WebAuthn when enrolled."
+          : "No platform authenticator is reachable here, so fingerprint and face run as a clearly-labelled simulation."}</p>
+      </div>`;
+    bindBiometricActions(payment);
+  };
+
+  const bindBiometricActions = (payment) => {
+    byId("bioUsePin")?.addEventListener("click", () => {
+      appState.authChallenge = "pin";
+      addAudit("Biometric skipped by choice", `User chose the Voice PIN instead of a biometric factor for ${formatCurrency(payment.amount)} to ${payment.payee.name}.`, "safe", "key");
+      enterVoicePin(payment);
+    });
+    byId("bioCancel")?.addEventListener("click", () => cancelByVoice(payment, "cancel"));
+    document.querySelectorAll("[data-bio-factor]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const modality = button.getAttribute("data-bio-factor");
+        if (!isBiometricEnrolled(modality)) {
+          showToast(`No ${modality} enrolled yet — open the caregiver setup to enroll it.`, "danger");
+          speak(`No ${modality === "voiceprint" ? "voice sample" : modality} is enrolled yet. Ask your caregiver to enroll it once, or use the Voice PIN.`);
+          openMandateSetup();
+          return;
+        }
+        if (appState.biometrics.verifying) {
+          showToast("Still matching the last factor — one moment.", "safe");
+          return;
+        }
+        if (modality === "voiceprint") startVoiceprintCapture(payment);
+        else requestDeviceBiometric(payment, modality);
+      });
+    });
+  };
+
+  /**
+   * Entry point out of the review step. A spoken yes with an enrolled voiceprint *is* the
+   * biometric sample, so the smoothest path needs no extra action at all.
+   */
+  const startAuthorization = (payment, { transcript = "", source = "click" } = {}) => {
+    const anyEnrolled = BIO_FACTORS.some((factor) => isBiometricEnrolled(factor.modality));
+    if (source === "voice" && transcript && isBiometricEnrolled("voiceprint")) {
+      requestVoiceprintConfirm(payment, transcript);
+      return;
+    }
+    if (anyEnrolled) {
+      renderBiometricPanel(payment);
+      speak("Confirmed. Now confirm it is really you — use your fingerprint, your face, or say your Voice PIN.");
+      return;
+    }
+    // Nothing enrolled on this mandate yet, so the Voice PIN is the only factor available.
+    enterVoicePin(payment);
+  };
+
+  const onBiometricConfirmed = (payment, result) => {
+    appState.biometrics.verifying = false;
+    const label = result.factor === "voiceprint" ? "Voice biometric" : result.factor === "face" ? "Face scan" : "Fingerprint";
+    addAudit(
+      `${label} confirmed`,
+      `${label} matched${result.score ? ` · voiceprint score ${result.score}` : ""} · engine ${result.engine}${result.simulated ? " (simulated in demo mode)" : ""}${result.authorizesCharge ? " · this device biometric authorizes the charge, so the Voice PIN is skipped" : " · the Voice PIN still authorizes the charge"}.`,
+      "safe",
+      result.factor === "voiceprint" ? "mic" : "fingerprint",
+    );
+    if (result.nextStep === "execute" && result.authToken) {
+      appState.tokenTtl = result.tokenTtlSeconds || 90;
+      showToast(`${label} authorized · charging hands-free`);
+      speak(`${label} matched. Charging your caregiver mandate now. No PIN pad will open.`);
+      executePayment(payment, result.authToken, result);
+      return;
+    }
+    // A voiceprint proves who spoke, but it is not hardware-backed, so it never skips the
+    // PIN on its own. If the caregiver allowed a device biometric to skip it and one is
+    // enrolled, offer that path instead of dropping straight into the PIN.
+    if (result.factor === "voiceprint" && appState.biometrics.deviceBiometricSkipsPin && anyDeviceBiometricEnrolled()) {
+      renderBiometricPanel(payment, {
+        message: "Voice confirmed. Use your fingerprint or face to authorize without the PIN, or choose the Voice PIN.",
+      });
+      speak("Voice confirmed. Use your fingerprint or face to pay without a PIN, or say your Voice PIN.");
+      return;
+    }
+    showToast(`${label} matched · now the Voice PIN`);
+    speak(`${label} matched. Now say your ${PIN_LENGTH} digit Voice PIN to authorize the payment.`);
+    enterVoicePin(payment);
+  };
+
+  const onBiometricRefused = (payment, body, status) => {
+    appState.biometrics.verifying = false;
+    if (status === 422) {
+      // A policy refusal, not a failed match: surface it and do not pretend a factor failed.
+      const label = body.code === "payee_not_on_mandate" ? "Payee not on mandate" : "Mandate limit enforced by server";
+      addAudit(label, `${body.reason}${body.authorizedPayees ? ` Authorized: ${body.authorizedPayees.join(", ")}.` : ""}`, "danger", "shield");
+      renderBiometricPanel(payment, { error: body.reason });
+      speak(body.reason);
+      showToast(body.code === "payee_not_on_mandate" ? "Payee not authorized on the mandate" : "Above mandate limit · caregiver approval needed", "danger");
+      return;
+    }
+    if (body.code === "biometric_not_enrolled") {
+      addAudit("Biometric not enrolled", body.reason, "warning", "help");
+      renderBiometricPanel(payment, { error: body.reason });
+      speak(body.reason);
+      return;
+    }
+    addAudit("Biometric did not match", `${body.reason || "The factor could not be verified."} The Voice PIN remains available.`, "warning", "alert");
+    renderBiometricPanel(payment, { error: body.reason || "That biometric did not match. Try another factor or use your Voice PIN." });
+    speak(body.reason || "That did not match. Try your fingerprint, your face, or your Voice PIN.");
+    showToast("Biometric did not match · try another factor", "danger");
+  };
+
+  /** Matches the spoken confirmation itself against the enrolled voiceprint. */
+  const requestVoiceprintConfirm = async (payment, transcript, sampleMs = 1400) => {
+    if (appState.biometrics.verifying) {
+      showToast("Still matching the last factor — one moment.", "safe");
+      return;
+    }
+    appState.biometrics.verifying = true;
+    renderBiometricPanel(payment);
+    try {
+      const { response, body } = await postBiometric("/api/biometric/verify", {
+        modality: "voiceprint",
+        transcript,
+        sampleMs,
+        sessionId: appState.sessionId,
+        intentId: payment.intentId,
+        amountPaise: Math.round(payment.amount * 100),
+        payee: payment.payee.name,
+        payeeVpa: payment.payee.vpa,
+        caregiverApprovalId: appState.caregiverApprovalId || null,
+      });
+      appState.serverAvailable = true;
+      if (response.ok && body.verified) onBiometricConfirmed(payment, body);
+      else onBiometricRefused(payment, body, response.status);
+    } catch (error) {
+      appState.biometrics.verifying = false;
+      appState.serverAvailable = false;
+      addAudit("Voice biometric unavailable", "The server could not be reached, so the Voice PIN is used instead.", "warning", "alert");
+      enterVoicePin(payment);
+    }
+  };
+
+  /** Lets the user speak a fresh sample when the automatic match was not possible. */
+  const startVoiceprintCapture = (payment) => {
+    if (!appState.recognition) {
+      showToast("Microphone is unavailable — use a fingerprint, face scan, or the Voice PIN.");
+      return;
+    }
+    appState.biometrics.verifying = true;
+    renderBiometricPanel(payment);
+    setTranscript("Say “yes confirm” for your voice biometric…");
+    speak("Say yes confirm, and I will match your voice.");
+    const started = Date.now();
+    const onResult = (event) => {
+      let finalText = "";
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        if (event.results[i].isFinal) finalText += event.results[i][0]?.transcript || "";
+      }
+      if (!finalText.trim()) return;
+      appState.recognition.removeEventListener("result", onResult);
+      appState.recognition.removeEventListener("error", onError);
+      setTranscript(finalText.trim());
+      requestVoiceprintConfirm(payment, finalText.trim(), Math.max(600, Date.now() - started));
+    };
+    const onError = () => {
+      appState.recognition.removeEventListener("result", onResult);
+      appState.recognition.removeEventListener("error", onError);
+      appState.biometrics.verifying = false;
+      renderBiometricPanel(payment, { error: "I could not hear your voice sample. Try a fingerprint or face scan." });
+    };
+    appState.recognition.addEventListener("result", onResult);
+    appState.recognition.addEventListener("error", onError);
+    try {
+      appState.recognition.lang = dom.languageSelect?.value || "en-IN";
+      appState.recognition.start();
+    } catch (error) {
+      onError();
+    }
+  };
+
+  /**
+   * Fingerprint or face. Uses a real WebAuthn assertion against the enrolled platform
+   * credential when one exists; otherwise the server records a clearly-labelled simulation
+   * so the demo still runs in browsers without a platform authenticator.
+   */
+  const requestDeviceBiometric = async (payment, modality) => {
+    if (appState.biometrics.verifying) {
+      showToast("Still matching the last factor — one moment.", "safe");
+      return;
+    }
+    appState.biometrics.verifying = true;
+    renderBiometricPanel(payment);
+
+    const credential = biometricCredential(modality);
+    let assertion = null;
+    let usedWebAuthn = false;
+
+    if (credential && credential.engine === "webauthn-platform/1" && webAuthnAvailable()) {
+      try {
+        const { body: challenge } = await postBiometric("/api/biometric/challenge", { purpose: "assert", sessionId: appState.sessionId });
+        const result = await navigator.credentials.get({
+          publicKey: {
+            challenge: b64urlToBytes(challenge.challenge),
+            allowCredentials: [{ id: b64urlToBytes(credential.credentialId), type: "public-key" }],
+            userVerification: "required",
+            timeout: 60000,
+          },
+        });
+        assertion = {
+          credentialId: result.id,
+          authenticatorData: bytesToB64url(result.response.authenticatorData),
+          clientDataJSON: bytesToB64url(result.response.clientDataJSON),
+          signature: bytesToB64url(result.response.signature),
+          userHandle: result.response.userHandle ? bytesToB64url(result.response.userHandle) : null,
+        };
+        usedWebAuthn = true;
+      } catch (error) {
+        // NotAllowedError (dismissed prompt), NotFoundError, or a blocked iframe permission
+        // policy all land here. Fall back to the simulator and say so in the log.
+        addAudit(
+          "Platform authenticator unavailable",
+          `${modality} could not complete a WebAuthn assertion (${error?.name || "error"}: ${error?.message || "unknown"}). Falling back to the labelled simulation.`,
+          "warning",
+          "alert",
+        );
+      }
+    }
+
+    try {
+      const { response, body } = await postBiometric("/api/biometric/verify", {
+        modality,
+        assertion,
+        sessionId: appState.sessionId,
+        intentId: payment.intentId,
+        amountPaise: Math.round(payment.amount * 100),
+        payee: payment.payee.name,
+        payeeVpa: payment.payee.vpa,
+        caregiverApprovalId: appState.caregiverApprovalId || null,
+      });
+      appState.serverAvailable = true;
+      if (response.ok && body.verified) {
+        if (!usedWebAuthn && body.simulated) {
+          addAudit("Simulated biometric used", `${modality} was verified by the demo simulator, not by a platform authenticator.`, "warning", "alert");
+        }
+        onBiometricConfirmed(payment, body);
+      } else onBiometricRefused(payment, body, response.status);
+    } catch (error) {
+      appState.biometrics.verifying = false;
+      appState.serverAvailable = false;
+      addAudit("Biometric check unavailable", "The server could not be reached, so the Voice PIN is used instead.", "warning", "alert");
+      enterVoicePin(payment);
+    }
+  };
+
+  /** Enrolls a voiceprint from a spoken sample, or from the typed fallback. */
+  const enrollVoiceprint = () => {
+    const finish = (transcript, sampleMs) => {
+      postBiometric("/api/biometric/enroll", { modality: "voiceprint", sessionId: appState.sessionId, sampleMs, transcript })
+        .then(({ response, body }) => {
+          if (!response.ok || !body.enrolled) {
+            showToast(body.reason || "Could not enroll the voice sample.", "danger");
+            return;
+          }
+          addAudit("Voiceprint enrolled", `A ${Math.round((body.sampleMs || sampleMs) / 100) / 100}s voice sample was enrolled as the speaker template (${body.engine}). Matching happens on the server.`, "safe", "mic");
+          showToast("Voiceprint enrolled · a spoken yes can now confirm");
+          speak("Your voice is enrolled. From now on, saying yes can confirm a payment.");
+          return loadMandate().then(renderBioEnrollment);
+        })
+        .catch(() => showToast("Server unreachable — voiceprint not enrolled.", "danger"));
+    };
+
+    if (!appState.recognition) {
+      // No microphone in this environment: enroll with a labelled default sample so the
+      // rest of the flow is still demonstrable.
+      finish("awaazpay voice sample", 1600);
+      return;
+    }
+    setTranscript("Speak a full sentence to enroll your voice…");
+    speak("Please say: Awaaz Pay my kirana bill.");
+    const started = Date.now();
+    const onResult = (event) => {
+      let finalText = "";
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        if (event.results[i].isFinal) finalText += event.results[i][0]?.transcript || "";
+      }
+      if (!finalText.trim()) return;
+      appState.recognition.removeEventListener("result", onResult);
+      appState.recognition.removeEventListener("error", onError);
+      finish(finalText.trim(), Math.max(700, Date.now() - started));
+    };
+    const onError = () => {
+      appState.recognition.removeEventListener("result", onResult);
+      appState.recognition.removeEventListener("error", onError);
+      showToast("Could not hear the sample. Enrolling with a default sample instead.");
+      finish("awaazpay voice sample", 1600);
+    };
+    appState.recognition.addEventListener("result", onResult);
+    appState.recognition.addEventListener("error", onError);
+    try {
+      appState.recognition.lang = dom.languageSelect?.value || "en-IN";
+      appState.recognition.start();
+    } catch (error) {
+      onError();
+    }
+  };
+
+  /**
+   * Enrolls a fingerprint or face factor. Uses a real WebAuthn registration against the
+   * device's platform authenticator when one is reachable, and falls back to a
+   * clearly-labelled simulated enrollment otherwise.
+   */
+  const enrollDeviceBiometric = async (modality) => {
+    const label = modality === "face" ? "Face scan" : "Fingerprint";
+    let attestation = null;
+    let rpId = null;
+
+    if (webAuthnAvailable()) {
+      try {
+        const { body: challenge } = await postBiometric("/api/biometric/challenge", { purpose: "register", sessionId: appState.sessionId });
+        rpId = window.location.hostname;
+        const result = await navigator.credentials.create({
+          publicKey: {
+            challenge: b64urlToBytes(challenge.challenge),
+            rp: { name: "AwaazPay", id: rpId },
+            user: {
+              id: new TextEncoder().encode(appState.sessionId),
+              name: "sarala.devi@awaazpay",
+              displayName: "Sarla Devi",
+            },
+            pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+            authenticatorSelection: {
+              authenticatorAttachment: "platform",
+              userVerification: "required",
+              residentKey: "preferred",
+            },
+            timeout: 60000,
+            attestation: "none",
+          },
+        });
+        attestation = {
+          id: result.id,
+          attestationObject: bytesToB64url(result.response.attestationObject),
+          clientDataJSON: bytesToB64url(result.response.clientDataJSON),
+        };
+      } catch (error) {
+        addAudit(
+          "Platform authenticator declined",
+          `${label} enrollment could not complete a WebAuthn registration (${error?.name || "error"}: ${error?.message || "unknown"}). Falling back to the labelled simulation.`,
+          "warning",
+          "alert",
+        );
+      }
+    }
+
+    try {
+      const { response, body } = await postBiometric("/api/biometric/enroll", {
+        modality, label, sessionId: appState.sessionId, rpId, attestation,
+      });
+      if (!response.ok || !body.enrolled) {
+        showToast(body.reason || `Could not enroll ${label.toLowerCase()}.`, "danger");
+        return;
+      }
+      addAudit(
+        `${label} enrolled`,
+        body.simulated
+          ? `${label} was enrolled by the demo simulator because no platform authenticator was reachable (${body.engine}).`
+          : `${label} was enrolled from a real platform authenticator (${body.engine}) for relying party ${body.rpId}. Assertions will be signature-verified on the server.`,
+        body.simulated ? "warning" : "safe",
+        "fingerprint",
+      );
+      showToast(body.simulated ? `${label} enrolled (simulated)` : `${label} enrolled · real WebAuthn`);
+      speak(`${label} enrolled. You can now confirm a payment with it.`);
+      await loadMandate();
+      renderBioEnrollment();
+    } catch (error) {
+      showToast("Server unreachable — nothing was enrolled.", "danger");
+    }
+  };
+
+  const enrollBiometricFactor = (modality) => {
+    if (modality === "voiceprint") enrollVoiceprint();
+    else enrollDeviceBiometric(modality);
+  };
+
+  /** Renders the enrollment rows and the caregiver's skip-PIN choice inside the modal. */
+  const renderBioEnrollment = () => {
+    const rows = byId("bioEnrollRows");
+    if (rows) {
+      rows.innerHTML = BIO_FACTORS.map(({ modality, icon, label }) => {
+        const enrolled = isBiometricEnrolled(modality);
+        const engine = biometricEngineLabel(modality);
+        const state = !enrolled
+          ? "not enrolled yet"
+          : engine === "webauthn-platform/1"
+            ? "enrolled · platform authenticator"
+            : "enrolled · demo simulator";
+        return `
+          <div class="bio-enroll-row ${enrolled ? "enrolled" : ""}">
+            <svg><use href="#icon-${icon}"></use></svg>
+            <span class="bio-enroll-copy"><strong>${label}</strong><small>${state}</small></span>
+            <button class="secondary-button" type="button" data-bio-enroll="${modality}">${enrolled ? "Re-enroll" : "Enroll"}</button>
+          </div>`;
+      }).join("");
+      rows.querySelectorAll("[data-bio-enroll]").forEach((button) => {
+        button.addEventListener("click", () => enrollBiometricFactor(button.getAttribute("data-bio-enroll")));
+      });
+    }
+    const toggle = byId("bioSkipPinToggle");
+    if (toggle) {
+      toggle.checked = Boolean(appState.biometrics.deviceBiometricSkipsPin);
+      // Assigned, not added, so reopening the modal never stacks duplicate handlers.
+      toggle.onchange = async () => {
+        const wanted = toggle.checked;
+        try {
+          const { response, body } = await postBiometric("/api/biometric/settings", { deviceBiometricSkipsPin: wanted });
+          if (!response.ok) throw new Error(body.reason || "rejected");
+          appState.biometrics.deviceBiometricSkipsPin = body.deviceBiometricSkipsPin;
+          addAudit(
+            "Caregiver changed the biometric policy",
+            `${body.effect} Voice biometrics still confirm the yes but never authorize a charge on their own.`,
+            "warning",
+            "settings",
+          );
+          showToast(body.deviceBiometricSkipsPin ? "Fingerprint/face can now skip the Voice PIN" : "The Voice PIN is required again");
+        } catch (error) {
+          toggle.checked = !wanted;
+          showToast("Could not save that choice — the server refused it.", "danger");
+        }
+      };
+    }
+  };
+
   const enterVoicePin = (payment) => {
     appState.voicePin = { digits: "", attempts: 0, locked: false, lockedUntil: 0, verifying: false, awaitingSpokenPin: true };
+    setAuthChallenge("pin");
     setState("authenticate");
     renderVoicePin(payment);
     const mode = payment.handsFreeEligible ? "inside the mandate limit" : "with caregiver assistance";
@@ -1554,7 +2117,22 @@
     const paymentEntity = result.payment || {};
     const resolvedReference = paymentEntity.id || `pay_demo_${Math.random().toString(36).slice(2, 10)}`;
     const providerLabel = result.mode === "razorpay-live" ? "Razorpay S2S · live keys" : "Razorpay S2S · Smart Demo Mode";
-    const authLabel = result.authorizationMode === "caregiver-assisted" ? "caregiver assisted" : "Voice PIN · hands-free";
+    // The receipt must name the factor that actually authorized the charge. Claiming
+    // "Voice PIN" for a fingerprint-authorized payment would falsify the audit trail.
+    const resolvedFactor = result.authorizationFactor
+      || (/^(fingerprint|face|voiceprint)-/.test(String(result.authorizationMode || ""))
+        ? String(result.authorizationMode).split("-")[0]
+        : "voice-pin");
+    const authLabel = result.authorizationMode === "caregiver-assisted"
+      ? "caregiver assisted"
+      : resolvedFactor === "fingerprint"
+        ? "Fingerprint biometric · hands-free"
+        : resolvedFactor === "face"
+          ? "Face biometric · hands-free"
+          : resolvedFactor === "voiceprint"
+            ? "Voiceprint · hands-free"
+            : "Voice PIN · hands-free";
+    const authIcon = resolvedFactor === "fingerprint" || resolvedFactor === "face" ? "fingerprint" : "lock";
     appState.lastPayment = { ...payment, reference: resolvedReference, result };
     dom.reviewEmpty.classList.add("hidden");
     dom.reviewContent.classList.remove("hidden");
@@ -1567,7 +2145,7 @@
           <div class="result-reference">${escapeHTML(resolvedReference)} · ${escapeHTML(providerLabel)} · ${escapeHTML(timeNow())}</div>
           <div class="result-mandate">
             <span><svg><use href="#icon-shield"></use></svg> mandate ${escapeHTML(result.mandateId || appState.mandate.id)}</span>
-            <span><svg><use href="#icon-lock"></use></svg> ${escapeHTML(authLabel)}${result.voiceprintScore ? ` · voiceprint ${escapeHTML(String(result.voiceprintScore))}` : ""}</span>
+            <span><svg><use href="#icon-${authIcon}"></use></svg> ${escapeHTML(authLabel)}${result.voiceprintScore ? ` · voiceprint ${escapeHTML(String(result.voiceprintScore))}` : ""}</span>
             <span><svg><use href="#icon-eye-off"></use></svg> visual PIN pad: never shown</span>
           </div>
           ${result.mode === "smart-demo" ? '<div class="result-note">Simulated capture — no real money moved. Add Razorpay test keys to charge the same S2S path for real.</div>' : ""}
@@ -1906,6 +2484,8 @@
     appState.caregiverApprovalId = null;
     appState.awaitingClarification = false;
     appState.voicePin = { digits: "", attempts: 0, locked: false, lockedUntil: 0, verifying: false, awaitingSpokenPin: false };
+    appState.authChallenge = "pin";
+    appState.biometrics.verifying = false;
     if (appState.listening && appState.recognition) {
       try { appState.recognition.stop(); } catch (error) { /* no-op */ }
       appState.listening = false;
@@ -2099,6 +2679,7 @@
       .join("");
     modal.classList.remove("hidden");
     document.body.classList.add("modal-open");
+    renderBioEnrollment();
     addAudit("Mandate setup replayed", "Caregiver setup is a one-time visual flow; the demo replays it so judges can see where authorization comes from.", "safe", "users");
 
     const steps = $$(".mandate-step", list);

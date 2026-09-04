@@ -728,3 +728,67 @@ svg { width: 20px; height: 20px; fill: none; }
   .log-panel-head h2 { font-size: 15px; }
   .risk-grid { grid-template-columns: 1fr; }
 }
+
+/* ---------------------------------------------------------------- biometrics */
+/* The confirmation step is a biometric gate, so it reuses the blue "waiting" language
+   of the Voice PIN panel and switches the badge to WAITING FOR BIOMETRIC. */
+
+.bio-panel { border: 1px solid var(--blue-line); background: linear-gradient(180deg, var(--blue-soft), #f7fbff 62%); border-radius: 14px; padding: 14px 15px 13px; }
+.bio-panel.error { border-color: #f0c9a8; background: linear-gradient(180deg, #fff6ec, #fffcf7 62%); }
+.bio-panel.verifying { opacity: .93; }
+.bio-panel h2 { margin: 11px 0 4px; font-size: 16px; letter-spacing: -.4px; }
+
+.bio-factors { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 9px; margin: 4px 0 11px; }
+
+.bio-factor {
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  padding: 11px 12px; border-radius: 12px; cursor: pointer;
+  border: 1px solid var(--blue-line); background: var(--surface);
+  transition: transform .14s ease, border-color .14s ease, box-shadow .14s ease;
+}
+.bio-factor svg { width: 20px; height: 20px; flex: 0 0 20px; fill: none; stroke: var(--blue-deep); stroke-width: 1.7; }
+.bio-factor:hover { transform: translateY(-1px); border-color: var(--blue); box-shadow: 0 8px 20px rgba(29, 78, 216, .12); }
+.bio-factor:active { transform: translateY(0); }
+.bio-factor:disabled { opacity: .55; cursor: progress; transform: none; box-shadow: none; border-color: var(--blue-line); }
+.bio-factor:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
+.bio-factor-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.bio-factor-copy strong { font-size: 11px; letter-spacing: -.2px; }
+.bio-factor-copy small { font-size: 8.5px; line-height: 1.45; color: var(--muted); }
+.bio-factor-state {
+  flex: 0 0 auto; font-style: normal; font-size: 7.5px; font-weight: 820;
+  letter-spacing: .8px; text-transform: uppercase; padding: 4px 7px; border-radius: 20px;
+}
+.bio-factor.enrolled .bio-factor-state { background: #e4f7ea; color: #1f7a44; }
+.bio-factor.unenrolled { border-style: dashed; background: #fbfcfd; }
+.bio-factor.unenrolled svg { stroke: var(--muted-light); }
+.bio-factor.unenrolled .bio-factor-state { background: #eef1f2; color: var(--muted); }
+
+.bio-fallback-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.bio-engine-note { margin: 9px 0 0; font-size: 8.5px; line-height: 1.5; color: var(--muted); }
+
+/* Enrollment inside the caregiver mandate modal. */
+.bio-enroll { margin-top: 13px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 13px; background: #fbfcfd; }
+.bio-enroll-head { display: flex; flex-direction: column; gap: 5px; margin-bottom: 11px; }
+.bio-enroll-head p { margin: 0; font-size: 9.5px; line-height: 1.55; color: var(--ink-soft); }
+.bio-enroll-rows { display: grid; gap: 8px; }
+.bio-enroll-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 11px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface);
+}
+.bio-enroll-row.enrolled { border-color: #bfe6cd; background: #f6fcf8; }
+.bio-enroll-row svg { width: 18px; height: 18px; flex: 0 0 18px; fill: none; stroke: var(--navy-soft); stroke-width: 1.7; }
+.bio-enroll-row.enrolled svg { stroke: #1f7a44; }
+.bio-enroll-copy { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0; }
+.bio-enroll-copy strong { font-size: 10.5px; }
+.bio-enroll-copy small { font-size: 8.5px; color: var(--muted); }
+
+.bio-toggle { display: flex; align-items: flex-start; gap: 9px; margin-top: 11px; padding-top: 11px; border-top: 1px dashed var(--line); cursor: pointer; }
+.bio-toggle input { margin: 2px 0 0; width: 15px; height: 15px; accent-color: var(--blue-deep); flex: 0 0 15px; cursor: pointer; }
+.bio-toggle-copy { display: flex; flex-direction: column; gap: 2px; }
+.bio-toggle-copy strong { font-size: 10px; }
+.bio-toggle-copy small { font-size: 8.5px; line-height: 1.5; color: var(--muted); }
+
+@media (max-width: 620px) {
+  .bio-factors { grid-template-columns: 1fr; }
+  .bio-factor-state { display: none; }
+}

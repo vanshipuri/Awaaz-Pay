@@ -357,6 +357,17 @@
         <div class="audit-banner mandate-banner"><span class="audit-banner-icon"><svg><use href="#icon-users"></use></svg></span><div><strong>The only step that needs a screen</strong><p>Meera Sharma registers a UPI AutoPay mandate (or loads a closed-loop Razorpay wallet) for Sarla Devi and enters the UPI PIN once, inside the bank's own secure surface. After that, everyday payments never show a PIN pad.</p></div></div>
         <ol class="mandate-steps" id="mandateSteps"></ol>
         <div class="mandate-bounds"><span><strong>₹5,000</strong> per transaction</span><span><strong>₹15,000</strong> per day</span><span><strong>3</strong> trusted payees</span></div>
+        <div class="bio-enroll" id="bioEnroll">
+          <div class="bio-enroll-head">
+            <span class="section-kicker">BIOMETRIC ENROLLMENT · ONE TIME</span>
+            <p>Enroll once here and every later payment can be confirmed hands-free. Fingerprint and face use this device's platform authenticator (Windows Hello, Touch ID) with user verification required, and the assertion is verified on the server.</p>
+          </div>
+          <div class="bio-enroll-rows" id="bioEnrollRows"></div>
+          <label class="bio-toggle" for="bioSkipPinToggle">
+            <input type="checkbox" id="bioSkipPinToggle" />
+            <span class="bio-toggle-copy"><strong>Let a fingerprint or face scan skip the Voice PIN</strong><small>Caregiver's choice, recorded server-side. A voice biometric never skips the PIN — it only confirms the yes.</small></span>
+          </label>
+        </div>
         <div class="modal-footer"><button class="primary-button" id="mandateDone" type="button" disabled>Mandate active · close</button></div>
       </section>
     </div>
