@@ -49,8 +49,9 @@ test.before(async () => {
       AWAAZPAY_VOICE_PIN: DEMO_PIN,
       AWAAZPAY_PIN_SALT: 'e2e-salt',
       AWAAZPAY_AUTH_SECRET: 'e2e-secret',
-      MANDATE_PER_TXN_LIMIT: '5000',
-      WALLET_BALANCE: '12500',
+      MANDATE_PER_TXN_LIMIT: '15000',
+      MANDATE_DAILY_LIMIT: '50000',
+      WALLET_BALANCE: '40000',
       GROQ_API_KEY: '',
       RAZORPAY_KEY_ID: '',
       RAZORPAY_KEY_SECRET: '',
@@ -122,7 +123,7 @@ test('the console boots into Smart Demo Mode with the mandate loaded', async (t)
   const { document } = await bootConsole();
 
   assert.match(text(document, '#providerMode'), /Smart Demo Mode/);
-  assert.match(text(document, '#mandateLimit'), /5,000/);
+  assert.match(text(document, '#mandateLimit'), /15,000/);
   assert.match(text(document, '#mandateStatus'), /active/);
   assert.equal(document.querySelectorAll('#stepList .agent-step').length, 8, 'the loop should show all eight agentic steps');
   assert.match(text(document, '#stepList'), /Voice PIN/);
@@ -143,7 +144,7 @@ test('Scenario 1: speak → yes → Voice PIN → hands-free success', async (t)
   click(document, '[data-demo="safe"]');
   await waitFor(() => document.querySelector('#confirmPayment'), { label: 'the confirmation button' });
   assert.match(text(document, '#reviewContent'), /Say YES/, 'a clear yes must be required');
-  assert.match(text(document, '#reviewContent'), /Within ₹5,000 · hands-free/, 'mandate headroom should be shown');
+  assert.match(text(document, '#reviewContent'), /Within ₹15,000 · hands-free/, 'mandate headroom should be shown');
 
   // 2. Say YES → the new authenticate state, not a payment.
   click(document, '#confirmPayment');
@@ -247,8 +248,8 @@ test('Scenario 3: above the mandate limit there is no silent bypass', async (t) 
   click(document, '[data-demo="mandate"]');
   await waitFor(() => document.querySelector('#confirmPayment'), { label: 'the gated confirmation button' });
 
-  assert.match(text(document, '#reviewContent'), /Above your ₹5,000 hands-free mandate/);
-  assert.match(text(document, '#reviewContent'), /Above ₹5,000 limit/);
+  assert.match(text(document, '#reviewContent'), /Above your ₹15,000 hands-free mandate/);
+  assert.match(text(document, '#reviewContent'), /Above ₹15,000 limit/);
   assert.match(text(document, '#reviewContent'), /Caregiver approval required/);
   assert.equal(document.querySelector('#confirmPayment').disabled, true, 'confirmation is gated until acknowledgement');
   assert.ok(document.getElementById('pinBadge').classList.contains('hidden'), 'no PIN challenge before the guards pass');

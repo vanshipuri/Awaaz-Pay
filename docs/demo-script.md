@@ -22,8 +22,8 @@ understood what happened. That is the real, daily, documented cost of a glass ke
 
 **The one-time fix (visual).** Meera comes home once. On the **caregiver setup screen** she:
 1. puts in her own name, relationship and phone (so approval calls reach her),
-2. sets the hands-free bounds — ₹5,000 per transaction, ₹15,000 a day (the RBI UPI AutoPay
-   ceiling — and she can only tighten, never widen),
+2. sets the hands-free bounds — ₹15,000 per transaction, ₹50,000 a day (the RBI e-mandate
+   ceiling, raised from ₹5,000 in April 2026 — and she can only tighten, never widen),
 3. sets Sarla's **Voice PIN** and enrolls her voice once,
 4. adds the three merchants Sarla actually pays to the **trusted-payee allowlist**,
 5. enters the real UPI PIN **one time**, inside the bank's own secure surface, to register
@@ -92,8 +92,8 @@ Open **Replay caregiver setup** (right rail). Talk while it animates:
   a PIN pad. AwaazPay refuses the direction itself — a collect request can never be charged
   on a push mandate.”*
 
-### Scene 4 — The mandate guard (above ₹5,000) · 45s
-1. Click **Above mandate limit** (₹6,000 to Mehta Utilities).
+### Scene 4 — The mandate guard (above ₹15,000) · 45s
+1. Click **Above mandate limit** (₹25,000 to Mehta Utilities).
 2. Acknowledge the spoken warning, then click **Ask caregiver** — the demo simulates Meera's
   signed, server-recorded approval.
 3. Only now can the flow proceed, labelled **“caregiver assisted.”**
@@ -159,9 +159,9 @@ Use these as “what happens when…”, and note each ends with **no money lost
    with `daily_limit_exhausted` / `insufficient_wallet_balance` rather than prompting the
    visual PIN.
 
-10. **Bigger than daily life ever needs.** ₹6,000+ cannot be done hands-free *at all*. The
-    agent itself directs her to caregiver approval / the bank's PIN screen — AwaazPay
-    refuses to pretend it can bypass the rule.
+10. **Bigger than daily life ever needs.** Anything above ₹15,000 cannot be done hands-free
+    *at all*. The agent itself directs her to caregiver approval / the bank's PIN screen —
+    AwaazPay refuses to pretend it can bypass the rule.
 
 ---
 
@@ -170,10 +170,13 @@ Use these as “what happens when…”, and note each ends with **no money lost
 **“But RBI/Razorpay mandate a UPI PIN or OTP — how is this hands-free and compliant?”**
 The PIN isn't bypassed — it is done **once**, visually by the caregiver, inside the bank's
 own secure surface, to create a **UPI AutoPay mandate** (or load a closed-loop Razorpay
-wallet). RBI's AutoPay rules allow recurring/merchant charges up to ₹5,000 without
-re-entering the PIN. In-mandate payments are therefore pre-authorized Server-to-Server
-Razorpay calls; no glass PIN pad is triggered. Above the mandate, the charge is refused and
-falls back to the bank PIN screen — we never automate that.
+wallet). RBI's *Digital Payments – E-mandate Framework, 2026* (circular
+RBI/DPSS/2026-27/396, dated 21 Apr 2026) allows e-mandate charges up to **₹15,000 per
+transaction** without re-authentication — raised from ₹5,000 in April 2026 (₹1 lakh applies
+only to mutual-fund SIPs, insurance premiums and credit-card bills). In-mandate payments are
+therefore pre-authorized Server-to-Server Razorpay calls; no glass PIN pad is triggered.
+Above the mandate, the charge is refused and falls back to the bank PIN screen — we never
+automate that.
 
 **“Couldn't someone just shout at the phone and spend?”**
 No. The spoken command only *prepares* a payment. Two gates remain: a spoken confirmation

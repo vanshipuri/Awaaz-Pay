@@ -57,9 +57,9 @@ test.before(async () => {
       AWAAZPAY_PIN_SALT: 'test-salt',
       AWAAZPAY_AUTH_SECRET: 'test-secret',
       AWAAZPAY_PIN_LOCK_SECONDS: '3',
-      MANDATE_PER_TXN_LIMIT: '5000',
-      MANDATE_DAILY_LIMIT: '15000',
-      WALLET_BALANCE: '12500',
+      MANDATE_PER_TXN_LIMIT: '15000',
+      MANDATE_DAILY_LIMIT: '50000',
+      WALLET_BALANCE: '40000',
       // No provider keys: the server must run in Smart Demo Mode.
       GROQ_API_KEY: '',
       RAZORPAY_KEY_ID: '',
@@ -96,7 +96,7 @@ test('health reports Smart Demo Mode with a server-verified PIN policy', async (
 test('the caregiver mandate exposes its hands-free bounds', async () => {
   const { status, body } = await get('/api/mandate');
   assert.equal(status, 200);
-  assert.equal(body.perTransactionLimit, 5000);
+  assert.equal(body.perTransactionLimit, 15000);
   assert.equal(body.status, 'active');
   assert.equal(body.handsFree, true);
   assert.equal(body.wallet.balance > 0, true);
@@ -190,7 +190,7 @@ test('a tampered token signature is rejected', async () => {
 
 test('above the mandate limit the server refuses to bypass the visual PIN', async () => {
   const intentId = 'INT-ABOVE';
-  const pin = await verifyPin({ intentId, amountPaise: 600000, sessionId: 'above-mandate' });
+  const pin = await verifyPin({ intentId, amountPaise: 2500000, sessionId: 'above-mandate' });
   assert.equal(pin.status, 422);
   assert.equal(pin.body.code, 'caregiver_approval_required');
   assert.equal(pin.body.authToken, undefined);
@@ -198,7 +198,7 @@ test('above the mandate limit the server refuses to bypass the visual PIN', asyn
 
 test('a server-recorded caregiver approval unlocks a caregiver-assisted charge', async () => {
   const intentId = 'INT-CAREGIVER';
-  const amountPaise = 600000;
+  const amountPaise = 2500000;
 
   const approval = await post('/api/caregiver/approve', { intentId, amountPaise, payee: 'Mehta Utilities' });
   assert.equal(approval.status, 200);
@@ -220,10 +220,10 @@ test('a server-recorded caregiver approval unlocks a caregiver-assisted charge',
 });
 
 test('a caregiver approval cannot be reused for a different amount', async () => {
-  const approval = await post('/api/caregiver/approve', { intentId: 'INT-REUSE', amountPaise: 600000 });
+  const approval = await post('/api/caregiver/approve', { intentId: 'INT-REUSE', amountPaise: 2500000 });
   const pin = await verifyPin({
     intentId: 'INT-REUSE',
-    amountPaise: 900000,
+    amountPaise: 3500000,
     caregiverApprovalId: approval.body.approvalId,
     sessionId: 'reuse-session',
   });
@@ -297,7 +297,7 @@ test('the allowlist matches on VPA as well as name', async () => {
 
 test('a caregiver approval authorizes a one-off payee outside the allowlist', async () => {
   const intentId = 'INT-ONEOFF';
-  // Deliberately inside the ₹5,000 cap: the only thing blocking this payee is the allowlist.
+  // Deliberately inside the ₹15,000 cap: the only thing blocking this payee is the allowlist.
   const amountPaise = 50000;
   const approval = await post('/api/caregiver/approve', { intentId, amountPaise, payee: 'Aman Traders' });
   const pin = await verifyPin({
@@ -380,7 +380,7 @@ test('the caregiver can set a new Voice PIN and the old one stops working', asyn
   // Reset back to the shared demo PIN so later assertions in this file stay valid.
   await post('/api/voice-pin/set', { pinDigits: DEMO_PIN });
   // And restore the default bounds used by the other tests.
-  await post('/api/caregiver/profile', { perTransactionLimit: 5000, dailyLimit: 15000, elderName: 'Sarla Devi', caregiverName: 'Meera Sharma', caregiverRelationship: 'Daughter' });
+  await post('/api/caregiver/profile', { perTransactionLimit: 15000, dailyLimit: 50000, elderName: 'Sarla Devi', caregiverName: 'Meera Sharma', caregiverRelationship: 'Daughter' });
 });
 
 test('a Voice PIN outside 4–6 digits is rejected', async () => {
@@ -548,7 +548,7 @@ test('a biometric cannot bypass the caregiver payee allowlist', async () => {
 });
 
 test('a biometric cannot bypass the per-transaction mandate cap', async () => {
-  const { status, body } = await verifyBio({ modality: 'fingerprint', intentId: 'INT-BIOCAP', amountPaise: 600000 });
+  const { status, body } = await verifyBio({ modality: 'fingerprint', intentId: 'INT-BIOCAP', amountPaise: 2500000 });
   assert.equal(status, 422);
   assert.equal(body.verified, false);
   assert.equal(body.code, 'caregiver_approval_required');

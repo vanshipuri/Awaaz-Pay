@@ -123,7 +123,7 @@
     inflated: "Sharma kirana ko pachaas hazaar rupaye bhejo",
     collect: "Sharma kirana ne pachaas hazaar ka collect request bheja hai",
     mismatch: "Sharma kirana ko paanch sau rupaye bhejo",
-    mandate: "Mehta utilities ko chhe hazaar rupaye bhejo",
+    mandate: "Mehta utilities ko pachees hazaar rupaye bhejo",
   };
 
   /**
@@ -137,13 +137,13 @@
     type: "upi-autopay",
     instrument: "sarala.devi@okhdfcbank",
     status: "active",
-    perTransactionLimit: 5000,
-    dailyLimit: 15000,
+    perTransactionLimit: 15000,
+    dailyLimit: 50000,
     usedToday: 0,
-    remainingToday: 15000,
+    remainingToday: 50000,
     caregiver: { name: "Meera Sharma", relationship: "Daughter", phone: "+91 98200 11223" },
     elder: { name: "Sarla Devi", handle: "SD", contact: "919812300000" },
-    wallet: { id: "acc_LOCALDEMO01", label: "AwaazPay closed-loop wallet", balance: 12500, currency: "INR" },
+    wallet: { id: "acc_LOCALDEMO01", label: "AwaazPay closed-loop wallet", balance: 40000, currency: "INR" },
     authorizedPayees: [],
     handsFree: true,
     paymentMode: "smart-demo",
@@ -621,7 +621,7 @@
     }
 
     const needsClarification = missingFields.length > 0;
-    const mandateLimit = appState.mandate?.perTransactionLimit || 5000;
+    const mandateLimit = appState.mandate?.perTransactionLimit || 15000;
     const mandateBreach = !needsClarification && !isCollect && Boolean(amount) && amount > mandateLimit;
     const flags = [...(intent.flags || [])];
 
@@ -2810,7 +2810,7 @@
       safety: {
         kicker: "SAFETY CENTRE",
         title: "Four rules protect every payment",
-        body: `<p>These guardrails are deliberately simple so the person making the payment, and the caregiver reviewing it later, can understand what happened.</p><div class="info-points"><div><span>01</span><strong>Always repeat the truth</strong><small>The amount and destination are spoken back before a confirmation can be accepted.</small></div><div><span>02</span><strong>Pause on unusual signals</strong><small>A large amount, a new payee, or a name mismatch needs an extra acknowledgement.</small></div><div><span>03</span><strong>Explain pulls clearly</strong><small>A collect request is described as money leaving your account and is never charged on the mandate.</small></div><div><span>04</span><strong>Stay inside the mandate</strong><small>Above the ₹5,000 hands-free limit the server refuses the charge and asks for caregiver authorization.</small></div></div>`,
+        body: `<p>These guardrails are deliberately simple so the person making the payment, and the caregiver reviewing it later, can understand what happened.</p><div class="info-points"><div><span>01</span><strong>Always repeat the truth</strong><small>The amount and destination are spoken back before a confirmation can be accepted.</small></div><div><span>02</span><strong>Pause on unusual signals</strong><small>A large amount, a new payee, or a name mismatch needs an extra acknowledgement.</small></div><div><span>03</span><strong>Explain pulls clearly</strong><small>A collect request is described as money leaving your account and is never charged on the mandate.</small></div><div><span>04</span><strong>Stay inside the mandate</strong><small>Above the ₹15,000 hands-free limit (RBI's e-mandate ceiling) the server refuses the charge and asks for caregiver authorization.</small></div></div>`,
       },
       trust: {
         kicker: "TRUST CENTRE",
@@ -2820,7 +2820,7 @@
       mandate: {
         kicker: "CAREGIVER MANDATE",
         title: "Why hands-free is allowed at all",
-        body: `<p>RBI and Razorpay require a UPI PIN for a normal payment. AwaazPay does not break that rule — it moves the PIN to a one-time caregiver setup and then charges inside a pre-authorized mandate.</p><div class="info-points"><div><span>01</span><strong>One-time visual setup</strong><small>A caregiver registers a UPI AutoPay mandate (or loads a closed-loop Razorpay wallet) and enters the UPI PIN once, in the bank app.</small></div><div><span>02</span><strong>Pre-authorized bounds</strong><small>Mandates under ₹5,000 per transaction can be charged without re-authentication, so everyday payments run server-to-server.</small></div><div><span>03</span><strong>Voice PIN instead of a PIN pad</strong><small>AwaazPay adds its own spoken passcode plus voiceprint check before it calls the S2S API.</small></div><div><span>04</span><strong>Above the limit, no bypass</strong><small>Anything larger is refused by the server and needs caregiver authorization — in production, the bank's visual PIN screen.</small></div></div>`,
+        body: `<p>RBI and Razorpay require a UPI PIN for a normal payment. AwaazPay does not break that rule — it moves the PIN to a one-time caregiver setup and then charges inside a pre-authorized mandate.</p><div class="info-points"><div><span>01</span><strong>One-time visual setup</strong><small>A caregiver registers a UPI AutoPay mandate (or loads a closed-loop Razorpay wallet) and enters the UPI PIN once, in the bank app.</small></div><div><span>02</span><strong>Pre-authorized bounds</strong><small>Under RBI's E-mandate Framework 2026, e-mandate charges up to ₹15,000 per transaction run without re-authentication, so everyday payments run server-to-server.</small></div><div><span>03</span><strong>Voice PIN instead of a PIN pad</strong><small>AwaazPay adds its own spoken passcode plus voiceprint check before it calls the S2S API.</small></div><div><span>04</span><strong>Above the limit, no bypass</strong><small>Anything larger is refused by the server and needs caregiver authorization — in production, the bank's visual PIN screen.</small></div></div>`,
       },
       voicepin: {
         kicker: "VOICE PIN",
@@ -2854,12 +2854,12 @@
     const payeeList = payees.length
       ? payees.slice(0, 4).join(", ") + (payees.length > 4 ? `, and ${payees.length - 4} more` : "")
       : "the merchants the elder trusts";
-    const perTxn = appState.mandate?.perTransactionLimit || 5000;
-    const daily = appState.mandate?.dailyLimit || 15000;
+    const perTxn = appState.mandate?.perTransactionLimit || 15000;
+    const daily = appState.mandate?.dailyLimit || 50000;
     return [
       { title: "Caregiver signs in", detail: `${caregiverName} opens the visual setup screen — the only step that needs eyes on glass.` },
       { title: "Choose trusted payees", detail: `${payeeList} are added to the mandate allowlist — the only merchants that can be charged hands-free.` },
-      { title: "Set the daily bounds", detail: `₹${formatNumber(perTxn)} per transaction and ₹${formatNumber(daily)} per day, inside RBI's UPI AutoPay limits for mandate-based charges.` },
+      { title: "Set the daily bounds", detail: `₹${formatNumber(perTxn)} per transaction and ₹${formatNumber(daily)} per day, inside RBI's e-mandate limits for mandate-based charges.` },
       { title: "Authenticate once, visually", detail: "The caregiver completes the UPI PIN / bank approval inside the bank's own secure surface." },
       { title: "Mandate registered", detail: "Razorpay returns a token. From now on AwaazPay charges server-to-server after a Voice PIN — no PIN pad, no OTP." },
     ];
