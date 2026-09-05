@@ -45,12 +45,16 @@ const TOKEN_TTL_SECONDS = Number(process.env.AWAAZPAY_TOKEN_TTL || 90);
 const PIN_MAX_ATTEMPTS = Number(process.env.AWAAZPAY_PIN_MAX_ATTEMPTS || 3);
 const PIN_LOCK_SECONDS = Number(process.env.AWAAZPAY_PIN_LOCK_SECONDS || 60);
 
-const MANDATE_PER_TXN_LIMIT = Number(process.env.MANDATE_PER_TXN_LIMIT || 5000);
-const MANDATE_DAILY_LIMIT = Number(process.env.MANDATE_DAILY_LIMIT || 15000);
-const WALLET_OPENING_BALANCE = Number(process.env.WALLET_BALANCE || 12500);
+const MANDATE_PER_TXN_LIMIT = Number(process.env.MANDATE_PER_TXN_LIMIT || 15000);
+const MANDATE_DAILY_LIMIT = Number(process.env.MANDATE_DAILY_LIMIT || 50000);
+const WALLET_OPENING_BALANCE = Number(process.env.WALLET_BALANCE || 40000);
 
-// RBI UPI AutoPay hands-free ceiling. The caregiver may set a *stricter* bound, never a
-// looser one — a profile edit cannot widen the compliant cap.
+// RBI Digital Payments – E-mandate Framework, 2026 (circular RBI/DPSS/2026-27/396,
+// dated 21 Apr 2026) raised the AFA-free e-mandate ceiling from ₹5,000 (Oct 2021 rules)
+// to ₹15,000 per transaction — ₹1,00,000 only for mutual-fund SIPs, insurance premiums
+// and credit-card bills. AwaazPay's hands-free ceiling tracks the general ₹15,000 cap.
+// The caregiver may set a *stricter* bound, never a looser one — a profile edit cannot
+// widen the compliant cap.
 const MAX_HANDS_FREE_PER_TXN = 15000;
 const MAX_HANDS_FREE_DAILY = 50000;
 

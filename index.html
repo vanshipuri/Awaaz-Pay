@@ -128,7 +128,7 @@
 
         <div class="profile-card">
           <div class="profile-avatar" id="profileAvatar">SD</div>
-          <div class="profile-copy"><strong id="profileName">Sarla Devi</strong><span>Personal account</span><span class="profile-balance" id="balanceDisplay">₹12,500</span></div>
+          <div class="profile-copy"><strong id="profileName">Sarla Devi</strong><span>Personal account</span><span class="profile-balance" id="balanceDisplay">₹40,000</span></div>
           <button class="profile-menu" id="profileMenuButton" type="button" aria-label="Open caregiver setup"><svg><use href="#icon-chevron-down"></use></svg></button>
         </div>
       </aside>
@@ -212,7 +212,7 @@
                   <button class="demo-chip danger" type="button" data-demo="inflated"><span class="demo-chip-icon"><svg><use href="#icon-alert"></use></svg></span><span><strong>Inflated amount</strong><small>₹50,000 · 100× usual</small></span><svg class="chip-arrow"><use href="#icon-arrow-up-right"></use></svg></button>
                   <button class="demo-chip danger" type="button" data-demo="collect"><span class="demo-chip-icon"><svg><use href="#icon-arrow-up-right"></use></svg></span><span><strong>Collect request</strong><small>₹50,000 · pull scam</small></span><svg class="chip-arrow"><use href="#icon-arrow-up-right"></use></svg></button>
                   <button class="demo-chip warning" type="button" data-demo="mismatch"><span class="demo-chip-icon"><svg><use href="#icon-eye-off"></use></svg></span><span><strong>Lookalike payee</strong><small>Name does not match</small></span><svg class="chip-arrow"><use href="#icon-arrow-up-right"></use></svg></button>
-                  <button class="demo-chip warning wide" type="button" data-demo="mandate"><span class="demo-chip-icon"><svg><use href="#icon-lock"></use></svg></span><span><strong>Above mandate limit</strong><small>₹6,000 · over the ₹5,000 hands-free cap → caregiver approval, no silent bypass</small></span><svg class="chip-arrow"><use href="#icon-arrow-up-right"></use></svg></button>
+                  <button class="demo-chip warning wide" type="button" data-demo="mandate"><span class="demo-chip-icon"><svg><use href="#icon-lock"></use></svg></span><span><strong>Above mandate limit</strong><small>₹25,000 · over the ₹15,000 hands-free cap → caregiver approval, no silent bypass</small></span><svg class="chip-arrow"><use href="#icon-arrow-up-right"></use></svg></button>
                 </div>
               </div>
             </section>
@@ -244,9 +244,9 @@
                   <span class="mandate-status" id="mandateStatus">active · hands-free</span>
                 </div>
                 <dl class="mandate-facts">
-                  <div><dt>Per transaction</dt><dd id="mandateLimit">₹5,000</dd></div>
-                  <div><dt>Used today</dt><dd id="mandateUsed">₹0 of ₹15,000 today</dd></div>
-                  <div><dt>Wallet balance</dt><dd id="walletBalance">₹12,500</dd></div>
+                  <div><dt>Per transaction</dt><dd id="mandateLimit">₹15,000</dd></div>
+                  <div><dt>Used today</dt><dd id="mandateUsed">₹0 of ₹50,000 today</dd></div>
+                  <div><dt>Wallet balance</dt><dd id="walletBalance">₹40,000</dd></div>
                   <div><dt>Mandate</dt><dd class="mono" id="mandateId">sub_local</dd></div>
                   <div><dt>Instrument</dt><dd class="mono" id="mandateInstrument">sarala.devi@okhdfcbank</dd></div>
                   <div><dt>Authorized by</dt><dd id="mandateCaregiver">Meera Sharma · Daughter</dd></div>
@@ -284,7 +284,7 @@
                 <div class="trust-promise"><span class="trust-promise-icon"><svg><use href="#icon-eye-off"></use></svg></span><span><strong>No visual PIN pads or OTPs</strong><small>Inside the mandate, your Voice PIN replaces the glass keypad.</small></span></div>
                 <div class="trust-promise"><span class="trust-promise-icon"><svg><use href="#icon-check"></use></svg></span><span><strong>No silent payments</strong><small>A clear YES plus a Voice PIN is required every time.</small></span></div>
                 <div class="trust-promise"><span class="trust-promise-icon"><svg><use href="#icon-lock"></use></svg></span><span><strong>Your PIN is never repeated</strong><small>Digits are redacted on screen and hashed on the server.</small></span></div>
-                <div class="caregiver-setting"><span><strong>Caregiver checks</strong><small>Required above ₹5,000 or for a new payee</small></span><span class="setting-toggle" aria-label="Caregiver checks enabled"><span></span></span></div>
+                <div class="caregiver-setting"><span><strong>Caregiver checks</strong><small>Required above ₹15,000 or for a new payee</small></span><span class="setting-toggle" aria-label="Caregiver checks enabled"><span></span></span></div>
                 <button class="text-button" id="trustRulesButton" type="button">View all promises <svg><use href="#icon-arrow-up-right"></use></svg></button>
               </section>
             </aside>
@@ -360,7 +360,7 @@
         <div class="modal-header"><div><span class="section-kicker">ONE-TIME VISUAL SETUP</span><h2 id="mandateTitle">Caregiver creates the mandate</h2></div><button class="modal-close" id="closeMandate" type="button" aria-label="Close mandate setup">×</button></div>
         <div class="audit-banner mandate-banner"><span class="audit-banner-icon"><svg><use href="#icon-users"></use></svg></span><div><strong>The only step that needs a screen</strong><p><span id="mandateBannerCaregiver">The caregiver</span> registers a UPI AutoPay mandate (or loads a closed-loop Razorpay wallet) for <span id="mandateBannerElder">the account holder</span> and enters the UPI PIN once, inside the bank's own secure surface. After that, everyday payments never show a PIN pad.</p></div></div>
         <ol class="mandate-steps" id="mandateSteps"></ol>
-        <div class="mandate-bounds" id="mandateBounds"><span><strong>₹5,000</strong> per transaction</span><span><strong>₹15,000</strong> per day</span><span><strong id="boundsPayeeCount">3</strong> trusted payees</span></div>
+        <div class="mandate-bounds" id="mandateBounds"><span><strong>₹15,000</strong> per transaction</span><span><strong>₹50,000</strong> per day</span><span><strong id="boundsPayeeCount">3</strong> trusted payees</span></div>
 
         <div class="caregiver-profile-setup" id="caregiverProfileSetup">
           <div class="bio-enroll-head">
@@ -382,8 +382,8 @@
             </fieldset>
             <fieldset class="profile-fieldset">
               <legend>Hands-free bounds</legend>
-              <label class="profile-field"><span>Per-transaction limit (₹)</span><input id="perTxnLimitInput" type="number" min="100" max="15000" step="100" placeholder="5000" /></label>
-              <label class="profile-field"><span>Daily limit (₹)</span><input id="dailyLimitInput" type="number" min="100" max="50000" step="500" placeholder="15000" /></label>
+              <label class="profile-field"><span>Per-transaction limit (₹)</span><input id="perTxnLimitInput" type="number" min="100" max="15000" step="100" placeholder="15000" /></label>
+              <label class="profile-field"><span>Daily limit (₹)</span><input id="dailyLimitInput" type="number" min="100" max="50000" step="500" placeholder="50000" /></label>
             </fieldset>
             <fieldset class="profile-fieldset">
               <legend>Voice PIN</legend>
